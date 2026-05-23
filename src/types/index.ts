@@ -4,6 +4,7 @@ export interface UserSettings {
   filingStatus: FilingStatus
   annualTaxableIncome: number
   stateCode: string
+  nycResident: boolean
 }
 
 export interface Position {
@@ -42,6 +43,7 @@ export interface PositionAnalysis {
   stcgCombinedRate: number
   ltcgCombinedRate: number
   niitApplies: boolean
+  nycRate: number
   stcgPreferred: boolean // true when STCG < LTCG (e.g. WA large gains)
 
   taxIfSoldNowSTCG: number
@@ -54,6 +56,16 @@ export interface PositionAnalysis {
   riskLevel: RiskLevel
   annualizedVol: number       // effective vol used for risk (%, e.g. 24)
   volIsOverride: boolean      // true if user-specified rather than ticker lookup
+}
+
+export interface FutureVestLot {
+  id: string
+  ticker: string
+  name: string
+  awardId: string
+  awardDate: string  // ISO YYYY-MM-DD
+  vestDate: string   // ISO YYYY-MM-DD
+  sharesGross: number
 }
 
 export interface StateTaxInfo {

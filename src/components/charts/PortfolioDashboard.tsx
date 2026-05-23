@@ -99,6 +99,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
   const {
     totalValue, totalGain, totalSavings,
     byRisk, weightedProbability, scatterData,
+    totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting,
   } = useMemo(() => {
     const totalValue = analyses.reduce((s, a) => s + a.currentValue, 0)
     const totalGain = analyses.reduce((s, a) => s + a.gainAmount, 0)
@@ -134,7 +135,17 @@ export default function PortfolioDashboard({ analyses }: Props) {
       prob: positionProbability(a),
     }))
 
-    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, scatterData }
+    // Tax-loss harvesting
+    const losingPositions = analyses.filter(a => a.isLoss)
+    const totalLosses = losingPositions.reduce((s, a) => s + Math.abs(a.gainAmount), 0)
+    const totalGainsOnly = analyses.filter(a => a.gainAmount > 0).reduce((s, a) => s + a.gainAmount, 0)
+    const netGainAfterHarvesting = Math.max(0, totalGainsOnly - totalLosses)
+    const avgSTCGRate = losingPositions.length > 0
+      ? losingPositions.reduce((s, a) => s + a.stcgCombinedRate, 0) / losingPositions.length
+      : (analyses[0]?.stcgCombinedRate ?? 0.37)
+    const taxSavedByHarvesting = Math.min(totalLosses, totalGainsOnly) * avgSTCGRate
+
+    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, scatterData, totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting }
   }, [analyses])
 
   const n = analyses.length
@@ -157,7 +168,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
           sublabel="if all STCG lots held to LTCG"
         />
         <div>
-          <div className="text-xs text-slate-500 mb-1.5">Collective LTCG Odds</div>
+          <div className="text-xs text-slate-500 mb-1.5">Chance of Capturing Savings</div>
           {weightedProbability != null ? (
             <div>
               <div className={`font-mono font-bold text-base ${
@@ -166,7 +177,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
               }`}>
                 {(weightedProbability * 100).toFixed(0)}%
               </div>
-              <div className="text-xs text-slate-600 mt-0.5">weighted by savings at stake</div>
+              <div className="text-xs text-slate-600 mt-0.5">prob. STCG lots stay above break-even til LTCG</div>
             </div>
           ) : (
             <div className="text-slate-500 text-sm">—</div>
@@ -268,6 +279,41 @@ export default function PortfolioDashboard({ analyses }: Props) {
           Top-left = high savings + close deadline (most urgent) · Top-right = high savings + time to wait
         </div>
       </div>
+
+      {/* ── Tax-loss harvesting summary ── */}
+      {totalLosses > 0 && (
+        <div className="border-t border-slate-700/40 pt-4">
+          <div className="text-xs font-semibold text-slate-300 mb-3">Tax-Loss Harvesting Opportunity</div>
+          <div className="grid grid-cols-3 gap-4 mb-3">
+            <div>
+              <div className="text-xs text-slate-500 mb-0.5">Total Unrealized Losses</div>
+              <div className="font-mono font-bold text-base text-red-400">
+                -{formatCurrency(totalLosses)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 mb-0.5">Offsets Against Gains</div>
+              <div className="font-mono font-bold text-base text-white">
+                {formatCurrency(Math.min(totalLosses, totalGainsOnly))}
+              </div>
+              <div className="text-xs text-slate-600 mt-0.5">
+                {netGainAfterHarvesting > 0
+                  ? `${formatCurrency(netGainAfterHarvesting)} remaining gain`
+                  : 'fully offsets gains'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 mb-0.5">Est. Tax Saved</div>
+              <div className="font-mono font-bold text-base text-green-400">
+                {formatCurrency(taxSavedByHarvesting)}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            <span className="text-amber-500/80">⚠️ Wash-sale rule:</span> repurchasing the same security within 30 days before or after the sale disallows the loss deduction.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

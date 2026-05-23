@@ -83,7 +83,10 @@ export default function SettingsPanel() {
             <label className="block text-xs text-slate-400 mb-1.5 font-medium">State</label>
             <select
               value={settings.stateCode}
-              onChange={e => setSettings({ stateCode: e.target.value })}
+              onChange={e => {
+                setSettings({ stateCode: e.target.value })
+                if (e.target.value !== 'NY') setSettings({ nycResident: false })
+              }}
               className="w-full bg-slate-700 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               {SORTED_STATES.map(s => (
@@ -92,6 +95,19 @@ export default function SettingsPanel() {
             </select>
             {currentState?.notes && (
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{currentState.notes}</p>
+            )}
+            {settings.stateCode === 'NY' && (
+              <label className="flex items-center gap-2 mt-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={settings.nycResident ?? false}
+                  onChange={e => setSettings({ nycResident: e.target.checked })}
+                  className="w-3.5 h-3.5 rounded accent-indigo-500"
+                />
+                <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">
+                  NYC resident <span className="text-slate-600">(adds ~3.876%)</span>
+                </span>
+              </label>
             )}
           </div>
         </div>

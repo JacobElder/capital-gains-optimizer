@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import { analyzePosition } from '../../lib/taxEngine'
 import PositionCard from './PositionCard'
+import GroupedPositionCard from './GroupedPositionCard'
 import PositionForm from './PositionForm'
 import SchwabImportModal from './SchwabImportModal'
 import EmptyState from '../ui/EmptyState'
 import PortfolioDashboard from '../charts/PortfolioDashboard'
 
 type SortKey = 'urgency' | 'savings' | 'gain' | 'risk'
+type ViewMode = 'individual' | 'grouped'
 
 const SORT_LABELS: Record<SortKey, string> = {
   urgency: 'Days to LTCG',
@@ -30,6 +32,15 @@ export default function PositionList() {
     [positions, settings]
   )
 
+  // Determine if any ticker has multiple lots
+  const hasGroupableTickers = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const p of positions) counts[p.ticker] = (counts[p.ticker] ?? 0) + 1
+    return Object.values(counts).some(c => c > 1)
+  }, [positions])
+
+  const [viewMode, setViewMode] = useState<ViewMode>(hasGroupableTickers ? 'grouped' : 'individual')
+
   const sorted = useMemo(() => {
     return [...analyses].sort((a, b) => {
       switch (sortKey) {
@@ -47,6 +58,17 @@ export default function PositionList() {
       }
     })
   }, [analyses, sortKey])
+
+  // Grouped view: map ticker -> ordered analyses
+  const groupedByTicker = useMemo(() => {
+    const map = new Map<string, typeof sorted>()
+    for (const a of sorted) {
+      const existing = map.get(a.position.ticker) ?? []
+      existing.push(a)
+      map.set(a.position.ticker, existing)
+    }
+    return map
+  }, [sorted])
 
   if (positions.length === 0) {
     return (
@@ -68,7 +90,23 @@ export default function PositionList() {
       {/* Controls */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">Sort by:</span>
+          {/* View mode toggle */}
+          <div className="flex gap-0.5 bg-slate-700/40 rounded-lg p-0.5 mr-1">
+            {(['grouped', 'individual'] as ViewMode[]).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                  viewMode === mode
+                    ? 'bg-slate-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {mode === 'grouped' ? 'Grouped' : 'Individual'}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-slate-500">Sort:</span>
           {(Object.entries(SORT_LABELS) as [SortKey, string][]).map(([k, l]) => (
             <button
               key={k}
@@ -111,13 +149,33 @@ export default function PositionList() {
 
       {/* Cards */}
       <div className="space-y-4">
-        {sorted.map(a => (
-          <PositionCard
-            key={a.position.id}
-            position={a.position}
-            onEdit={() => setEditingPositionId(a.position.id)}
-          />
-        ))}
+        {viewMode === 'individual'
+          ? sorted.map(a => (
+              <PositionCard
+                key={a.position.id}
+                position={a.position}
+                onEdit={() => setEditingPositionId(a.position.id)}
+              />
+            ))
+          : Array.from(groupedByTicker.entries()).map(([ticker, tickerAnalyses]) =>
+              tickerAnalyses.length === 1
+                ? (
+                  <PositionCard
+                    key={tickerAnalyses[0].position.id}
+                    position={tickerAnalyses[0].position}
+                    onEdit={() => setEditingPositionId(tickerAnalyses[0].position.id)}
+                  />
+                )
+                : (
+                  <GroupedPositionCard
+                    key={ticker}
+                    ticker={ticker}
+                    analyses={tickerAnalyses}
+                    onEdit={(id) => setEditingPositionId(id)}
+                  />
+                )
+            )
+        }
       </div>
 
       {/* Modals */}

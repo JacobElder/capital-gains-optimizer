@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Position, UserSettings } from '../types'
+import type { Position, UserSettings, FutureVestLot } from '../types'
 
 interface AppState {
   settings: UserSettings
   positions: Position[]
+  futureVests: FutureVestLot[]
   editingPositionId: string | null
   isAddingPosition: boolean
 
@@ -13,6 +14,8 @@ interface AppState {
   updatePosition: (id: string, updates: Partial<Omit<Position, 'id' | 'createdAt'>>) => void
   deletePosition: (id: string) => void
   clearPositions: () => void
+  setFutureVests: (vests: FutureVestLot[]) => void
+  clearFutureVests: () => void
   setEditingPositionId: (id: string | null) => void
   setIsAddingPosition: (val: boolean) => void
 }
@@ -24,8 +27,10 @@ export const useAppStore = create<AppState>()(
         filingStatus: 'single',
         annualTaxableIncome: 150_000,
         stateCode: 'NY',
+        nycResident: false,
       },
       positions: [],
+      futureVests: [],
       editingPositionId: null,
       isAddingPosition: false,
 
@@ -57,12 +62,15 @@ export const useAppStore = create<AppState>()(
 
       clearPositions: () => set({ positions: [] }),
 
+      setFutureVests: (vests) => set({ futureVests: vests }),
+      clearFutureVests: () => set({ futureVests: [] }),
+
       setEditingPositionId: (id) => set({ editingPositionId: id }),
       setIsAddingPosition: (val) => set({ isAddingPosition: val }),
     }),
     {
       name: 'capital-gains-optimizer',
-      partialize: (s) => ({ settings: s.settings, positions: s.positions }),
+      partialize: (s) => ({ settings: s.settings, positions: s.positions, futureVests: s.futureVests }),
     }
   )
 )

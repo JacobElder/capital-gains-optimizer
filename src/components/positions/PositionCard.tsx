@@ -130,7 +130,7 @@ export default function PositionCard({ position, onEdit }: Props) {
     breakevenPrice, dropCushionPercent,
     riskLevel,
     isLongTerm, daysHeld, daysUntilLongTerm, holdingProgressPercent,
-    stcgCombinedRate, ltcgCombinedRate, niitApplies, stcgPreferred,
+    stcgCombinedRate, ltcgCombinedRate, niitApplies, nycRate, stcgPreferred,
   } = analysis
 
   const { annualizedVol, volIsOverride } = analysis
@@ -263,6 +263,11 @@ export default function PositionCard({ position, onEdit }: Props) {
             {niitApplies && (
               <p className="text-xs text-amber-500/80 mt-2">
                 ⚠️ +3.8% NIIT included — applies because your income exceeds the federal threshold.
+              </p>
+            )}
+            {nycRate > 0 && (
+              <p className="text-xs text-amber-500/80 mt-1">
+                ⚠️ +{(nycRate * 100).toFixed(3)}% NYC city tax included in rates above.
               </p>
             )}
           </div>

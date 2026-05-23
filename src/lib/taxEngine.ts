@@ -6,6 +6,43 @@ import { getTickerVol, isVolKnown, DEFAULT_VOL } from '../data/tickerVolatility'
 
 const LTCG_DAYS = 366 // IRS: "more than 1 year" = 366+ calendar days
 
+// NYC income tax brackets (2025) — capital gains taxed as ordinary income
+const NYC_BRACKETS: Record<string, Array<{ upTo: number; rate: number }>> = {
+  single: [
+    { upTo: 12_000,   rate: 0.03078 },
+    { upTo: 25_000,   rate: 0.03762 },
+    { upTo: 50_000,   rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  hoh: [
+    { upTo: 12_000,   rate: 0.03078 },
+    { upTo: 25_000,   rate: 0.03762 },
+    { upTo: 50_000,   rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  mfj: [
+    { upTo: 21_600,   rate: 0.03078 },
+    { upTo: 45_000,   rate: 0.03762 },
+    { upTo: 90_000,   rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  mfs: [
+    { upTo: 10_800,   rate: 0.03078 },
+    { upTo: 22_500,   rate: 0.03762 },
+    { upTo: 45_000,   rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+}
+
+export function getNYCRate(income: number, filingStatus: string): number {
+  const brackets = NYC_BRACKETS[filingStatus] ?? NYC_BRACKETS['single']
+  // Find the marginal rate bracket for this income level
+  for (const bracket of brackets) {
+    if (income <= bracket.upTo) return bracket.rate
+  }
+  return 0.03876
+}
+
 // Time-adjusted risk: uses per-ticker (or user-supplied) annualized vol to calibrate.
 //   sigma_pct(N days) = annualVol% * sqrt(N / 252)
 // Thresholds (expressed as multiples of 1σ):
@@ -46,7 +83,7 @@ export function effectiveVol(position: Pick<Position, 'ticker' | 'volatilityOver
 
 export function analyzePosition(position: Position, settings: UserSettings): PositionAnalysis {
   const { shares, costBasisPerShare, currentPrice, purchaseDate } = position
-  const { filingStatus, annualTaxableIncome, stateCode } = settings
+  const { filingStatus, annualTaxableIncome, stateCode, nycResident } = settings
 
   // --- Cost basis & gain ---
   const totalCostBasis = shares * costBasisPerShare
@@ -68,9 +105,12 @@ export function analyzePosition(position: Position, settings: UserSettings): Pos
   const stateSTCGRate = getStateSTCGRate(stateCode, annualTaxableIncome, filingStatus)
   const stateLTCGRate = getStateLTCGRate(stateCode, annualTaxableIncome, filingStatus)
   const niitApplies = getNIITApplies(annualTaxableIncome, filingStatus)
+  const nycRate = (nycResident && stateCode === 'NY')
+    ? getNYCRate(annualTaxableIncome, filingStatus)
+    : 0
 
-  const stcgCombinedRate = federalSTCGRate + stateSTCGRate
-  const ltcgCombinedRate = federalLTCGRate + stateLTCGRate
+  const stcgCombinedRate = federalSTCGRate + stateSTCGRate + nycRate
+  const ltcgCombinedRate = federalLTCGRate + stateLTCGRate + nycRate
 
   // WA edge case: STCG may be lower than LTCG for large gains
   const stcgPreferred = !isLoss && !isLongTerm && stcgCombinedRate < ltcgCombinedRate
@@ -126,6 +166,7 @@ export function analyzePosition(position: Position, settings: UserSettings): Pos
     stcgCombinedRate,
     ltcgCombinedRate,
     niitApplies,
+    nycRate,
     stcgPreferred,
     taxIfSoldNowSTCG,
     taxIfSoldAsLTCG,

@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import { lookupTickerName } from '../../data/tickerNames'
 import { formatCurrency } from '../../lib/taxEngine'
+import type { FutureVestLot } from '../../types'
 
 interface Props {
   onClose: () => void
@@ -247,6 +248,88 @@ function parseGenericCSV(text: string): { rows: ParsedRow[]; errors: string[] } 
   return { rows, errors }
 }
 
+// ── RSU Future Vest parser ────────────────────────────────────────────────────
+
+const TODAY = '2026-05-22' // current date for filtering past vests
+
+function parseEACFutureVests(text: string): FutureVestLot[] {
+  const rsuIdx = text.indexOf('*** RESTRICTED STOCK UNITS ***')
+  if (rsuIdx < 0) return []
+
+  const rsuSection = text.slice(rsuIdx)
+  const lines = rsuSection.split('\n')
+
+  const result: FutureVestLot[] = []
+  let currentTicker = ''
+  let currentAwardId = ''
+  let currentAwardDate = ''
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
+    const line = raw.trim()
+
+    // Stop at next major section
+    if (line.startsWith('***') && !line.includes('RESTRICTED STOCK UNITS')) break
+
+    // Detect ticker from award header row — look for "Symbol" column
+    // Award header lines typically have: Symbol, Award Date, Award ID, ...
+    if (line.toLowerCase().includes('symbol') && line.toLowerCase().includes('award date')) {
+      // Next non-empty line may have the ticker, or it could be on the same line after headers
+      // Try the following line(s) for the actual values
+      const nextLine = (lines[i + 1] ?? '').trim()
+      if (nextLine && !nextLine.toLowerCase().includes('symbol')) {
+        const cells = splitCSVLine(nextLine)
+        if (cells[0] && /^[A-Z]{1,5}$/.test(cells[0].toUpperCase().trim())) {
+          currentTicker = cells[0].toUpperCase().trim()
+          const awardDateRaw = cells[1] ?? ''
+          currentAwardDate = parseDate(awardDateRaw)
+          i++ // consume
+        }
+      }
+      continue
+    }
+
+    // Detect ticker from a line that looks like: GOOG,"Alphabet Inc.",...
+    // (simple award block header - Symbol is first column, typically all-caps)
+    const tickerMatch = line.match(/^([A-Z]{1,5}),/)
+    if (tickerMatch) {
+      currentTicker = tickerMatch[1]
+      const cells = splitCSVLine(line)
+      const awardDateRaw = cells[1] ?? ''
+      if (awardDateRaw) currentAwardDate = parseDate(awardDateRaw)
+      continue
+    }
+
+    // Award ID row: "Award ID,XXXXXXX" or ",Award ID,XXXXXXX"
+    const awardIdMatch = line.match(/Award ID[,\s]+([A-Z0-9\-]+)/i)
+    if (awardIdMatch) {
+      currentAwardId = awardIdMatch[1].replace(/"/g, '').trim()
+      continue
+    }
+
+    // Vest schedule row: ,"MM-DD-YYYY","NN" or similar
+    // These are indented (start with comma) with date and share count
+    const vestMatch = raw.match(/^\s*,\s*"?(\d{2}-\d{2}-\d{4})"?\s*,\s*"?(\d+)"?/)
+    if (vestMatch && currentTicker) {
+      const vestDate = parseDate(vestMatch[1])
+      const sharesGross = parseInt(vestMatch[2], 10)
+      if (vestDate && vestDate > TODAY && !isNaN(sharesGross) && sharesGross > 0) {
+        result.push({
+          id: crypto.randomUUID(),
+          ticker: currentTicker,
+          name: lookupTickerName(currentTicker) || currentTicker,
+          awardId: currentAwardId,
+          awardDate: currentAwardDate,
+          vestDate,
+          sharesGross,
+        })
+      }
+    }
+  }
+
+  return result
+}
+
 function parseText(text: string): { rows: ParsedRow[]; errors: string[] } {
   if (isEACFormat(text)) return parseEACText(text)
   return parseGenericCSV(text)
@@ -272,7 +355,7 @@ function downloadTemplate() {
 // ── Main modal ────────────────────────────────────────────────────────────────
 
 export default function SchwabImportModal({ onClose }: Props) {
-  const { addPosition } = useAppStore()
+  const { addPosition, setFutureVests } = useAppStore()
   const [tab, setTab] = useState<'paste' | 'file'>('paste')
   const [rawText, setRawText] = useState('')
   const [parsed, setParsed] = useState<{ rows: ParsedRow[]; errors: string[] } | null>(null)
@@ -306,6 +389,13 @@ export default function SchwabImportModal({ onClose }: Props) {
         purchaseDate: row.purchaseDate,
         currentPrice: row.currentPrice,
       })
+    }
+    // Parse and store future vests if this is an EAC file
+    if (isEACFormat(rawText)) {
+      const futureVests = parseEACFutureVests(rawText)
+      if (futureVests.length > 0) {
+        setFutureVests(futureVests)
+      }
     }
     setImported(true)
   }
