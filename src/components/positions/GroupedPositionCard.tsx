@@ -18,62 +18,60 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit }: Props)
   const isLoss = totalGain < 0
   const companyName = analyses[0]?.position.name ?? ticker
 
-  // Risk distribution
   const riskCounts: Record<string, number> = {}
   for (const a of analyses) {
     riskCounts[a.riskLevel] = (riskCounts[a.riskLevel] ?? 0) + 1
   }
 
-  // Most urgent lot: smallest daysUntilLongTerm among non-LTCG, non-loss
   const actionable = analyses.filter(a => !a.isLongTerm && !a.isLoss)
   const mostUrgent = actionable.length > 0
     ? actionable.reduce((min, a) => a.daysUntilLongTerm < min.daysUntilLongTerm ? a : min)
     : null
 
   const RISK_BADGE_STYLES: Record<string, string> = {
-    high: 'bg-red-950 border-red-800 text-red-300',
-    moderate: 'bg-amber-950 border-amber-800 text-amber-300',
-    low: 'bg-green-950 border-green-800 text-green-300',
-    loss: 'bg-slate-800 border-slate-600 text-slate-400',
-    'already-ltcg': 'bg-indigo-950 border-indigo-800 text-indigo-300',
-    'stcg-preferred': 'bg-orange-950 border-orange-800 text-orange-300',
+    high: 'bg-red-50 border-red-200 text-red-700',
+    moderate: 'bg-amber-50 border-amber-200 text-amber-700',
+    low: 'bg-green-50 border-green-200 text-green-700',
+    loss: 'bg-slate-100 border-slate-300 text-slate-600',
+    'already-ltcg': 'bg-blue-50 border-blue-200 text-blue-700',
+    'stcg-preferred': 'bg-orange-50 border-orange-200 text-orange-700',
   }
   const RISK_ICONS: Record<string, string> = {
-    high: '🔴', moderate: '🟡', low: '🟢', loss: '📉', 'already-ltcg': '✅', 'stcg-preferred': '⚠️',
+    high: '▲', moderate: '●', low: '●', loss: '▼', 'already-ltcg': '✓', 'stcg-preferred': '!',
   }
 
-  // Dominant risk level (for border coloring)
   const dominantRisk = Object.entries(riskCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'low'
 
+  const borderAccent =
+    dominantRisk === 'high' ? 'border-l-4 border-l-red-400' :
+    dominantRisk === 'low' ? 'border-l-4 border-l-green-500' :
+    dominantRisk === 'already-ltcg' ? 'border-l-4 border-l-blue-400' : ''
+
   return (
-    <div className={`bg-slate-800 border rounded-xl overflow-hidden transition-all
-      ${dominantRisk === 'high' ? 'border-red-900/70' :
-        dominantRisk === 'low' ? 'border-green-900/60' :
-        dominantRisk === 'already-ltcg' ? 'border-blue-900/60' :
-        'border-slate-700/50'}`}>
+    <div className={`bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden ${borderAccent}`}>
 
       {/* Header */}
       <div className="px-5 py-4 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0
-            ${isLoss ? 'bg-red-900/50 text-red-300' : 'bg-indigo-900/50 text-indigo-300'}`}>
+          <div className={`w-9 h-9 rounded-md flex items-center justify-center text-xs font-bold flex-shrink-0
+            ${isLoss ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
             {ticker.slice(0, 2)}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-white text-base">{ticker}</span>
-              <span className="text-slate-400 text-sm truncate">{companyName}</span>
-              <span className="text-xs bg-slate-700 text-slate-400 rounded-full px-2 py-0.5">
-                {analyses.length} lot{analyses.length !== 1 ? 's' : ''}
+              <span className="font-bold text-slate-900 text-base">{ticker}</span>
+              <span className="text-slate-500 text-sm truncate">{companyName}</span>
+              <span className="text-xs bg-slate-100 border border-slate-200 text-slate-500 rounded px-2 py-0.5 font-medium">
+                {analyses.length} lots
               </span>
             </div>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
               <span className="text-xs text-slate-500 font-mono">{formatCurrency(totalValue)}</span>
-              <span className={`text-xs font-mono font-semibold ${isLoss ? 'text-red-400' : 'text-green-400'}`}>
+              <span className={`text-xs font-mono font-semibold ${isLoss ? 'text-red-600' : 'text-green-700'}`}>
                 {totalGain >= 0 ? '+' : ''}{formatCurrency(totalGain)} gain
               </span>
               {totalSavings > 0 && (
-                <span className="text-xs text-indigo-300 font-mono">
+                <span className="text-xs text-[#1B6B3A] font-mono font-semibold">
                   {formatCurrency(totalSavings)} potential savings
                 </span>
               )}
@@ -82,12 +80,11 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit }: Props)
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Risk distribution badges */}
           <div className="hidden sm:flex items-center gap-1 flex-wrap justify-end max-w-[200px]">
             {Object.entries(riskCounts).map(([risk, count]) => (
               <span
                 key={risk}
-                className={`text-xs border rounded-full px-2 py-0.5 ${RISK_BADGE_STYLES[risk] ?? ''}`}
+                className={`text-xs border rounded px-2 py-0.5 font-medium ${RISK_BADGE_STYLES[risk] ?? ''}`}
               >
                 {RISK_ICONS[risk]} {count}
               </span>
@@ -95,26 +92,24 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit }: Props)
           </div>
           <button
             onClick={() => setExpanded(e => !e)}
-            className="text-slate-400 hover:text-white transition-colors text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 rounded-lg"
+            className="text-slate-500 hover:text-slate-800 transition-colors text-xs bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1.5 rounded-md font-medium"
           >
             {expanded ? '▲ Collapse' : '▼ Expand'}
           </button>
         </div>
       </div>
 
-      {/* Next LTCG callout */}
       {mostUrgent && (
         <div className="px-5 pb-3">
-          <span className="text-xs text-slate-500">
-            Next LTCG: <span className="text-indigo-300 font-semibold">{mostUrgent.daysUntilLongTerm} day{mostUrgent.daysUntilLongTerm !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-slate-400">
+            Next LTCG: <span className="text-[#002B45] font-semibold">{mostUrgent.daysUntilLongTerm} day{mostUrgent.daysUntilLongTerm !== 1 ? 's' : ''}</span>
             {analyses.length > 1 && ` · most urgent of ${analyses.length} lots`}
           </span>
         </div>
       )}
 
-      {/* Expanded individual cards */}
       {expanded && (
-        <div className="border-t border-slate-700/50 px-4 py-4 space-y-4 bg-slate-900/30">
+        <div className="border-t border-slate-100 px-4 py-4 space-y-3 bg-slate-50">
           {analyses.map(a => (
             <PositionCard
               key={a.position.id}

@@ -7,11 +7,12 @@
     box-sizing: border-box;
   }
   body {
-    background-color: #0f172a;
-    color: white;
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    background-color: #f1f4f8;
+    color: #0f172a;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
   input[type="date"]::-webkit-calendar-picker-indicator {
-    filter: invert(0.5);
+    filter: none;
+    opacity: 0.5;
   }
 }

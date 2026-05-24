@@ -9,13 +9,13 @@ import type { FutureVestLot } from '../../types'
 
 // Ticker → color for bar chart
 const TICKER_COLORS: Record<string, string> = {
-  GOOG: '#6366f1',
-  GOOGL: '#6366f1',
-  MSFT: '#22d3ee',
-  AMZN: '#f59e0b',
-  META: '#3b82f6',
-  AAPL: '#a3e635',
-  NVDA: '#10b981',
+  GOOG: '#4f46e5',
+  GOOGL: '#4f46e5',
+  MSFT: '#0284c7',
+  AMZN: '#d97706',
+  META: '#2563eb',
+  AAPL: '#16a34a',
+  NVDA: '#059669',
 }
 function tickerColor(ticker: string) {
   return TICKER_COLORS[ticker] ?? '#818cf8'
@@ -59,16 +59,16 @@ function VestTooltip({ active, payload, priceMap }: TooltipProps) {
   const ticker = d.ticker ?? ''
   const price = priceMap[ticker]
   return (
-    <div className="bg-slate-800 border border-slate-600 rounded-lg p-3 text-xs shadow-xl min-w-[150px]">
-      <div className="font-bold text-white mb-1">{d.monthLabel}</div>
-      <div className="text-slate-300">
+    <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs shadow-lg min-w-[150px]">
+      <div className="font-bold text-slate-900 mb-1">{d.monthLabel}</div>
+      <div className="text-slate-600">
         <div className="flex justify-between gap-4">
-          <span className="text-slate-500">Gross shares</span>
+          <span className="text-slate-400">Gross shares</span>
           <span className="font-mono">{d.sharesGross.toLocaleString()}</span>
         </div>
         {price != null && (
           <div className="flex justify-between gap-4">
-            <span className="text-slate-500">Est. value</span>
+            <span className="text-slate-400">Est. value</span>
             <span className="font-mono">{formatCurrency(d.sharesGross * price)}</span>
           </div>
         )}
@@ -93,8 +93,8 @@ export default function FutureVestingView() {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
         <div className="text-5xl">📅</div>
-        <div className="text-white font-bold text-xl">No future vesting data</div>
-        <p className="text-slate-400 text-sm max-w-sm leading-relaxed">
+        <div className="text-slate-900 font-bold text-xl">No future vesting data</div>
+        <p className="text-slate-500 text-sm max-w-sm leading-relaxed">
           Import your Schwab Equity Awards Center (EAC) export to see upcoming vest events.
           The file includes a "RESTRICTED STOCK UNITS" section with your vesting schedule.
         </p>
@@ -153,49 +153,49 @@ export default function FutureVestingView() {
   return (
     <div className="space-y-5">
       {/* Summary stats */}
-      <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4">
-        <div className="text-xs font-semibold text-slate-300 mb-3">Vesting Summary</div>
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Vesting Summary</div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
-            <div className="text-xs text-slate-500 mb-0.5">Total Future Shares</div>
-            <div className="font-mono font-bold text-base text-white">{totalShares.toLocaleString()}</div>
-            <div className="text-xs text-slate-600 mt-0.5">gross (before withholding)</div>
+            <div className="text-xs text-slate-400 mb-0.5">Total Future Shares</div>
+            <div className="font-mono font-bold text-xl text-slate-900">{totalShares.toLocaleString()}</div>
+            <div className="text-xs text-slate-400 mt-0.5">gross (before withholding)</div>
           </div>
           <div>
-            <div className="text-xs text-slate-500 mb-0.5">Est. Gross Value</div>
+            <div className="text-xs text-slate-400 mb-0.5">Est. Gross Value</div>
             {hasAnyPrice ? (
-              <div className="font-mono font-bold text-base text-white">{formatCurrency(estimatedGrossValue)}</div>
+              <div className="font-mono font-bold text-xl text-slate-900">{formatCurrency(estimatedGrossValue)}</div>
             ) : (
-              <div className="font-mono font-bold text-base text-slate-500">—</div>
+              <div className="font-mono font-bold text-xl text-slate-400">—</div>
             )}
-            <div className="text-xs text-slate-600 mt-0.5">at current price</div>
+            <div className="text-xs text-slate-400 mt-0.5">at current price</div>
           </div>
           <div>
-            <div className="text-xs text-slate-500 mb-0.5">Upcoming Events</div>
-            <div className="font-mono font-bold text-base text-white">{futureVests.length}</div>
-            <div className="text-xs text-slate-600 mt-0.5">vest lots</div>
+            <div className="text-xs text-slate-400 mb-0.5">Upcoming Events</div>
+            <div className="font-mono font-bold text-xl text-slate-900">{futureVests.length}</div>
+            <div className="text-xs text-slate-400 mt-0.5">vest lots</div>
           </div>
           <div>
-            <div className="text-xs text-slate-500 mb-0.5">Next Vest In</div>
+            <div className="text-xs text-slate-400 mb-0.5">Next Vest In</div>
             {daysUntilNext != null ? (
-              <div className="font-mono font-bold text-base text-indigo-300">{daysUntilNext} day{daysUntilNext !== 1 ? 's' : ''}</div>
+              <div className="font-mono font-bold text-xl text-[#002B45]">{daysUntilNext} day{daysUntilNext !== 1 ? 's' : ''}</div>
             ) : (
-              <div className="font-mono font-bold text-base text-slate-500">—</div>
+              <div className="font-mono font-bold text-xl text-slate-400">—</div>
             )}
             {nextVest && (
-              <div className="text-xs text-slate-600 mt-0.5">{nextVest.vestDate}</div>
+              <div className="text-xs text-slate-400 mt-0.5">{nextVest.vestDate}</div>
             )}
           </div>
         </div>
 
         {/* Withholding callout */}
-        <div className="mt-4 bg-amber-950/30 border border-amber-800/30 rounded-lg px-3 py-2.5 text-xs">
-          <span className="text-amber-400 font-semibold">Withholding estimate:</span>
-          <span className="text-slate-400 ml-1">
+        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5 text-xs">
+          <span className="text-amber-700 font-semibold">Withholding estimate:</span>
+          <span className="text-slate-600 ml-1">
             Typical RSU withholding is 40–50%. At 46% withheld, estimated net shares ≈{' '}
-            <span className="font-mono font-semibold text-white">{estimatedNetShares.toLocaleString()}</span>
+            <span className="font-mono font-semibold text-slate-900">{estimatedNetShares.toLocaleString()}</span>
             {hasAnyPrice && estimatedGrossValue > 0 && (
-              <span className="text-slate-400"> ({formatCurrency(estimatedGrossValue * RETENTION)} est. net value)</span>
+              <span className="text-slate-600"> ({formatCurrency(estimatedGrossValue * RETENTION)} est. net value)</span>
             )}.
           </span>
         </div>
@@ -203,29 +203,29 @@ export default function FutureVestingView() {
 
       {/* Monthly bar chart */}
       {months.length > 0 && (
-        <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4">
-          <div className="text-xs font-semibold text-slate-300 mb-1">Vesting Timeline</div>
-          <div className="text-xs text-slate-500 mb-3">Gross shares per month</div>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+          <div className="text-xs font-semibold text-slate-700 mb-1">Vesting Timeline</div>
+          <div className="text-xs text-slate-400 mb-3">Gross shares per month</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis
                 dataKey="monthLabel"
-                tick={{ fill: '#64748b', fontSize: 9 }}
-                axisLine={{ stroke: '#334155' }}
+                tick={{ fill: '#94a3b8', fontSize: 9 }}
+                axisLine={{ stroke: '#e2e8f0' }}
                 tickLine={false}
                 angle={-35}
                 textAnchor="end"
                 interval={0}
               />
               <YAxis
-                tick={{ fill: '#64748b', fontSize: 9 }}
+                tick={{ fill: '#94a3b8', fontSize: 9 }}
                 axisLine={false}
                 tickLine={false}
                 width={45}
                 tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
               />
-              <Tooltip content={<VestTooltip priceMap={priceMap} />} cursor={{ fill: '#1e293b' }} />
+              <Tooltip content={<VestTooltip priceMap={priceMap} />} cursor={{ fill: '#f1f5f9' }} />
               <Bar dataKey="sharesGross" radius={[3, 3, 0, 0]}>
                 {chartData.map((d, i) => (
                   <Cell key={i} fill={tickerColor(d.ticker)} fillOpacity={0.8} />
@@ -236,7 +236,7 @@ export default function FutureVestingView() {
           {/* Ticker legend */}
           <div className="flex gap-3 mt-1 flex-wrap">
             {uniqueTickers.map(ticker => (
-              <span key={ticker} className="flex items-center gap-1 text-xs text-slate-500">
+              <span key={ticker} className="flex items-center gap-1 text-xs text-slate-400">
                 <span className="w-2 h-2 rounded-sm inline-block" style={{ background: tickerColor(ticker) }} />
                 {ticker}
               </span>
@@ -246,14 +246,14 @@ export default function FutureVestingView() {
       )}
 
       {/* Monthly timeline table */}
-      <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-700/40">
-          <div className="text-xs font-semibold text-slate-300">Monthly Schedule</div>
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-100">
+          <div className="text-xs font-semibold text-slate-700">Monthly Schedule</div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-slate-700/30 text-slate-400">
+              <tr className="bg-slate-50 text-slate-500">
                 <th className="text-left px-4 py-2.5">Month</th>
                 <th className="text-right px-4 py-2.5">Gross Shares</th>
                 <th className="text-right px-4 py-2.5">Est. Net Shares</th>
@@ -272,16 +272,16 @@ export default function FutureVestingView() {
                 }, 0)
                 const hasPrice = tickers.some(t => priceMap[t] != null)
                 return (
-                  <tr key={m.monthKey} className="border-t border-slate-700/30 hover:bg-slate-700/20">
-                    <td className="px-4 py-2.5 font-semibold text-white">{m.monthLabel}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{m.sharesGross.toLocaleString()}</td>
+                  <tr key={m.monthKey} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-semibold text-slate-900">{m.monthLabel}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-slate-700">{m.sharesGross.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-slate-400">
                       ~{Math.round(m.sharesGross * RETENTION).toLocaleString()}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono">
-                      {hasPrice ? formatCurrency(estValue) : <span className="text-slate-600">—</span>}
+                    <td className="px-4 py-2.5 text-right font-mono text-slate-700">
+                      {hasPrice ? formatCurrency(estValue) : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-500 font-mono text-xs">
+                    <td className="px-4 py-2.5 text-slate-400 font-mono text-xs">
                       {m.awardIds.join(', ') || '—'}
                     </td>
                   </tr>
@@ -296,7 +296,7 @@ export default function FutureVestingView() {
       <div className="flex justify-end">
         <button
           onClick={handleClear}
-          className="border border-red-900/60 hover:border-red-700 text-red-400/70 hover:text-red-300 text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+          className="border border-red-200 hover:border-red-300 text-red-500 hover:text-red-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white"
         >
           Clear Vesting Data
         </button>

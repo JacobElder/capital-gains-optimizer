@@ -32,7 +32,6 @@ export default function PositionList() {
     [positions, settings]
   )
 
-  // Determine if any ticker has multiple lots
   const hasGroupableTickers = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const p of positions) counts[p.ticker] = (counts[p.ticker] ?? 0) + 1
@@ -59,7 +58,6 @@ export default function PositionList() {
     })
   }, [analyses, sortKey])
 
-  // Grouped view: map ticker -> ordered analyses
   const groupedByTicker = useMemo(() => {
     const map = new Map<string, typeof sorted>()
     for (const a of sorted) {
@@ -84,37 +82,36 @@ export default function PositionList() {
 
   return (
     <div>
-      {/* Portfolio dashboard (replaces old 4-column summary bar) */}
       <PortfolioDashboard analyses={analyses} />
 
       {/* Controls */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-2">
           {/* View mode toggle */}
-          <div className="flex gap-0.5 bg-slate-700/40 rounded-lg p-0.5 mr-1">
+          <div className="flex gap-0 bg-white border border-slate-200 rounded-md p-0.5 shadow-sm mr-1">
             {(['grouped', 'individual'] as ViewMode[]).map(mode => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                className={`text-xs px-3 py-1.5 rounded transition-colors font-medium ${
                   viewMode === mode
-                    ? 'bg-slate-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#002B45] text-white'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 {mode === 'grouped' ? 'Grouped' : 'Individual'}
               </button>
             ))}
           </div>
-          <span className="text-xs text-slate-500">Sort:</span>
+          <span className="text-xs text-slate-400">Sort:</span>
           {(Object.entries(SORT_LABELS) as [SortKey, string][]).map(([k, l]) => (
             <button
               key={k}
               onClick={() => setSortKey(k)}
-              className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
+              className={`text-xs px-3 py-1.5 rounded-md transition-colors border font-medium ${
                 sortKey === k
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'
+                  ? 'bg-[#002B45] text-white border-[#002B45]'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-800'
               }`}
             >
               {l}
@@ -128,19 +125,22 @@ export default function PositionList() {
                 clearPositions()
               }
             }}
-            className="border border-red-900/60 hover:border-red-700 text-red-400/70 hover:text-red-300 text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+            className="border border-red-200 hover:border-red-300 text-red-500 hover:text-red-700 text-sm font-medium px-3 py-2 rounded-md transition-colors bg-white"
           >
             Clear All
           </button>
           <button
             onClick={() => setShowImport(true)}
-            className="border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+            className="border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-900 text-sm font-medium px-3 py-2 rounded-md transition-colors bg-white shadow-sm flex items-center gap-1.5"
           >
-            <span>📋</span> Import CSV
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Import CSV
           </button>
           <button
             onClick={() => setIsAddingPosition(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+            className="bg-[#1B6B3A] hover:bg-[#155E34] text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors shadow-sm flex items-center gap-1.5"
           >
             <span>+</span> Add Position
           </button>
@@ -148,7 +148,7 @@ export default function PositionList() {
       </div>
 
       {/* Cards */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {viewMode === 'individual'
           ? sorted.map(a => (
               <PositionCard
@@ -178,7 +178,6 @@ export default function PositionList() {
         }
       </div>
 
-      {/* Modals */}
       {isAddingPosition && (
         <PositionForm onClose={() => setIsAddingPosition(false)} />
       )}
