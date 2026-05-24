@@ -9,7 +9,10 @@
       "Bash(npx tsc *)",
       "Bash(npm run *)",
       "Bash(curl -s http://localhost:5173)",
-      "Bash(pkill -f \"vite --port 5173\")"
+      "Bash(pkill -f \"vite --port 5173\")",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(ssh -T git@github.com)"
     ]
   }
 }
