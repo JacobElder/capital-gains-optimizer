@@ -12,7 +12,8 @@
       "Bash(pkill -f \"vite --port 5173\")",
       "Bash(gh auth *)",
       "Bash(gh repo *)",
-      "Bash(ssh -T git@github.com)"
+      "Bash(ssh -T git@github.com)",
+      "Bash(vercel --version)"
     ]
   }
 }
