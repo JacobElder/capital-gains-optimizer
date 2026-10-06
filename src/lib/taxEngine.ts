@@ -1,12 +1,10 @@
-import { differenceInCalendarDays, parseISO, addDays } from 'date-fns'
+import { differenceInCalendarDays, parseISO, addDays, addYears, format } from 'date-fns'
 import type { Position, UserSettings, PositionAnalysis, RiskLevel } from '../types'
-import { getFederalSTCGRate, getFederalLTCGRate, getNIITApplies } from '../data/federalTaxBrackets'
-import { getStateSTCGRate, getStateLTCGRate } from '../data/stateTaxData'
-import { getTickerVol, isVolKnown, DEFAULT_VOL } from '../data/tickerVolatility'
+import { federalSTCGTax, federalLTCGTax, niitTax, taxOnSlice } from '../data/federalTaxBrackets'
+import { stateTaxOnGain } from '../data/stateTaxData'
+import { getTickerVol, isVolKnown } from '../data/tickerVolatility'
 
-const LTCG_DAYS = 366 // IRS: "more than 1 year" = 366+ calendar days
-
-// NYC income tax brackets (2025) — capital gains taxed as ordinary income
+// NYC income tax brackets — capital gains taxed as ordinary income
 const NYC_BRACKETS: Record<string, Array<{ upTo: number; rate: number }>> = {
   single: [
     { upTo: 12_000,   rate: 0.03078 },
@@ -34,43 +32,73 @@ const NYC_BRACKETS: Record<string, Array<{ upTo: number; rate: number }>> = {
   ],
 }
 
-export function getNYCRate(income: number, filingStatus: string): number {
-  const brackets = NYC_BRACKETS[filingStatus] ?? NYC_BRACKETS['single']
-  // Find the marginal rate bracket for this income level
-  for (const bracket of brackets) {
-    if (income <= bracket.upTo) return bracket.rate
-  }
-  return 0.03876
+// Risk is rated on the upside/downside ratio of waiting:
+//   E[gain from waiting | waiting wins] / E[loss from waiting | waiting loses]
+// (unconditional expectations; an Omega ratio with a zero threshold). The
+// probability of regret alone is a poor criterion: tax savings are usually a
+// few % of price while months of volatility are 15–30%, so nearly every lot
+// has a 30–50% chance of regret even when waiting is clearly worth it on average.
+export const HIGH_RISK_RATIO = 1.25 // waiting is barely better than a coin flip after tax
+export const LOW_RISK_RATIO = 2     // expected upside at least twice the expected downside
+
+export interface TaxBreakdown {
+  federal: number
+  niit: number
+  state: number
+  city: number
+  total: number
 }
 
-// Time-adjusted risk: uses per-ticker (or user-supplied) annualized vol to calibrate.
-//   sigma_pct(N days) = annualVol% * sqrt(N / 252)
-// Thresholds (expressed as multiples of 1σ):
-//   HIGH     < 0.75σ  (>22% probability the cushion gets breached)
-//   MODERATE  0.75–1.5σ  (7–22% probability)
-//   LOW      > 1.5σ   (<7% probability)
-function getRiskLevel(
-  dropCushionPercent: number,
-  isLoss: boolean,
-  isLongTerm: boolean,
-  stcgPreferred: boolean,
-  daysUntilLongTerm: number,
-  annualVol: number,
-): RiskLevel {
-  if (isLoss) return 'loss'
-  if (isLongTerm) return 'already-ltcg'
-  if (stcgPreferred) return 'stcg-preferred'
-  const days = Math.max(1, daysUntilLongTerm)
-  const sigmaPct = annualVol * Math.sqrt(days / 252)
-  if (dropCushionPercent < 0.75 * sigmaPct) return 'high'
-  if (dropCushionPercent < 1.5 * sigmaPct) return 'moderate'
-  return 'low'
+/**
+ * Total tax on realizing `gain`, stacked on top of the user's other taxable
+ * income. Losses are treated as producing no tax (conservative: ignores the
+ * value of offsetting other gains or $3k of ordinary income).
+ */
+export function taxOnGain(gain: number, longTerm: boolean, settings: UserSettings): TaxBreakdown {
+  const { filingStatus, annualTaxableIncome: income, stateCode, nycResident } = settings
+  if (gain <= 0) return { federal: 0, niit: 0, state: 0, city: 0, total: 0 }
+  const federal = longTerm
+    ? federalLTCGTax(income, gain, filingStatus)
+    : federalSTCGTax(income, gain, filingStatus)
+  const niit = niitTax(income, gain, filingStatus)
+  const state = stateTaxOnGain(stateCode, income, gain, filingStatus, longTerm)
+  const city = nycResident && stateCode === 'NY'
+    ? taxOnSlice(income, income + gain, NYC_BRACKETS[filingStatus] ?? NYC_BRACKETS.single)
+    : 0
+  return { federal, niit, state, city, total: federal + niit + state + city }
 }
 
-export function riskSigmaContext(daysUntilLongTerm: number, annualVol = DEFAULT_VOL): { sigmaPct: number; highThreshold: number; lowThreshold: number } {
-  const days = Math.max(1, daysUntilLongTerm)
-  const sigmaPct = annualVol * Math.sqrt(days / 252)
-  return { sigmaPct, highThreshold: 0.75 * sigmaPct, lowThreshold: 1.5 * sigmaPct }
+/**
+ * IRS: long-term means held MORE than one year. The holding period starts the
+ * day after the trade date, so the first long-term sale date is the day after
+ * the one-year anniversary of the purchase.
+ */
+export function longTermDate(purchaseDate: string): Date {
+  return addDays(addYears(parseISO(purchaseDate), 1), 1)
+}
+
+// Abramowitz–Stegun 26.2.17, |error| < 7.5e-8
+export function normalCDF(x: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x))
+  const d = 0.3989423 * Math.exp((-x * x) / 2)
+  const p = t * (0.3193815 + t * (-0.3565638 + t * (1.7814779 + t * (-1.8212560 + t * 1.3302744))))
+  const cdf = 1 - d * p
+  return x >= 0 ? cdf : 1 - cdf
+}
+
+/** σ of log-returns over a calendar-day horizon, from an annualized vol in %. */
+export function horizonSigma(annualVolPct: number, calendarDays: number): number {
+  return (annualVolPct / 100) * Math.sqrt(Math.max(1, calendarDays) / 365)
+}
+
+/**
+ * P(S_T < K) for a driftless (martingale) lognormal price. Zero drift is a
+ * deliberate neutral assumption: the app should not bake in a return forecast.
+ */
+export function probBelow(spot: number, strike: number, sigma: number): number {
+  if (strike <= 0) return 0
+  if (sigma <= 0) return strike > spot ? 1 : 0
+  return normalCDF((Math.log(strike / spot) + 0.5 * sigma * sigma) / sigma)
 }
 
 export function effectiveVol(position: Pick<Position, 'ticker' | 'volatilityOverride'>): { vol: number; isOverride: boolean; isKnown: boolean } {
@@ -81,72 +109,105 @@ export function effectiveVol(position: Pick<Position, 'ticker' | 'volatilityOver
   return { vol: getTickerVol(position.ticker), isOverride: false, isKnown: known }
 }
 
-export function analyzePosition(position: Position, settings: UserSettings): PositionAnalysis {
+// Standard-normal quadrature grid used for expected-value integrals
+const Z_GRID = (() => {
+  const pts: Array<{ z: number; w: number }> = []
+  const n = 241, lo = -6, hi = 6, h = (hi - lo) / (n - 1)
+  let total = 0
+  for (let i = 0; i < n; i++) {
+    const z = lo + i * h
+    const w = Math.exp(-z * z / 2)
+    pts.push({ z, w })
+    total += w
+  }
+  return pts.map(p => ({ z: p.z, w: p.w / total }))
+})()
+
+function getRiskLevel(
+  upsideDownsideRatio: number,
+  isLoss: boolean,
+  isLongTerm: boolean,
+  stcgPreferred: boolean,
+): RiskLevel {
+  if (isLoss) return 'loss'
+  if (isLongTerm) return 'already-ltcg'
+  if (stcgPreferred) return 'stcg-preferred'
+  if (upsideDownsideRatio < HIGH_RISK_RATIO) return 'high'
+  if (upsideDownsideRatio < LOW_RISK_RATIO) return 'moderate'
+  return 'low'
+}
+
+export function analyzePosition(position: Position, settings: UserSettings, today: Date = new Date()): PositionAnalysis {
   const { shares, costBasisPerShare, currentPrice, purchaseDate } = position
-  const { filingStatus, annualTaxableIncome, stateCode, nycResident } = settings
 
   // --- Cost basis & gain ---
   const totalCostBasis = shares * costBasisPerShare
   const currentValue = shares * currentPrice
   const gainAmount = currentValue - totalCostBasis
-  const gainPercent = costBasisPerShare > 0 ? (gainAmount / totalCostBasis) * 100 : 0
+  const gainPercent = totalCostBasis > 0 ? (gainAmount / totalCostBasis) * 100 : 0
   const isLoss = gainAmount < 0
 
-  // --- Holding period (IRS: period starts day AFTER trade date) ---
-  const holdingStart = addDays(parseISO(purchaseDate), 1)
-  const daysHeld = differenceInCalendarDays(new Date(), holdingStart)
-  const isLongTerm = daysHeld >= LTCG_DAYS
-  const daysUntilLongTerm = isLongTerm ? 0 : LTCG_DAYS - daysHeld
-  const holdingProgressPercent = Math.min(100, (daysHeld / LTCG_DAYS) * 100)
+  // --- Holding period ---
+  const ltDate = longTermDate(purchaseDate)
+  const daysHeld = differenceInCalendarDays(today, parseISO(purchaseDate))
+  const daysUntilLongTerm = Math.max(0, differenceInCalendarDays(ltDate, today))
+  const isLongTerm = daysUntilLongTerm === 0
+  const totalWindow = Math.max(1, differenceInCalendarDays(ltDate, parseISO(purchaseDate)))
+  const holdingProgressPercent = Math.min(100, Math.max(0, (daysHeld / totalWindow) * 100))
 
-  // --- Tax rates ---
-  const federalSTCGRate = getFederalSTCGRate(annualTaxableIncome, filingStatus)
-  const federalLTCGRate = getFederalLTCGRate(annualTaxableIncome, filingStatus)
-  const stateSTCGRate = getStateSTCGRate(stateCode, annualTaxableIncome, filingStatus)
-  const stateLTCGRate = getStateLTCGRate(stateCode, annualTaxableIncome, filingStatus)
-  const niitApplies = getNIITApplies(annualTaxableIncome, filingStatus)
-  const nycRate = (nycResident && stateCode === 'NY')
-    ? getNYCRate(annualTaxableIncome, filingStatus)
-    : 0
+  // --- Tax on selling now vs. at the LTCG date (at today's price) ---
+  const taxNow = taxOnGain(gainAmount, false, settings)
+  const taxLT = taxOnGain(gainAmount, true, settings)
+  const taxableGain = Math.max(0, gainAmount)
+  const rate = (t: number) => (taxableGain > 0 ? t / taxableGain : 0)
 
-  const stcgCombinedRate = federalSTCGRate + stateSTCGRate + nycRate
-  const ltcgCombinedRate = federalLTCGRate + stateLTCGRate + nycRate
-
-  // WA edge case: STCG may be lower than LTCG for large gains
-  const stcgPreferred = !isLoss && !isLongTerm && stcgCombinedRate < ltcgCombinedRate
-
-  // --- Tax amounts at current price (on the gain, not full proceeds) ---
-  const taxableGain = Math.max(0, gainAmount) // negative gain = no tax
-  const taxIfSoldNowSTCG = taxableGain * stcgCombinedRate
-  const taxIfSoldAsLTCG = taxableGain * ltcgCombinedRate
+  const taxIfSoldNowSTCG = taxNow.total
+  const taxIfSoldAsLTCG = taxLT.total
   const taxSavingsFromWaiting = taxIfSoldNowSTCG - taxIfSoldAsLTCG
+  const stcgPreferred = !isLoss && !isLongTerm && taxSavingsFromWaiting < 0
 
-  // --- Break-even analysis ---
-  // net_now = currentValue - taxIfSoldNowSTCG
-  // At breakeven price P per share:
-  //   P*shares - (P*shares - totalCostBasis)*ltcgCombined = net_now
-  //   => solve per share: p - (p - basis)*ltcgCombined = net_now/shares
-  //   => p*(1-ltcgCombined) = net_now/shares - basis*ltcgCombined ... wait
-  // Simpler: work per share.
   const netProceedsNow = currentValue - taxIfSoldNowSTCG
-
-  let breakevenPrice = currentPrice
-  let dropCushionPercent = 0
-
-  if (!isLoss && !isLongTerm && !stcgPreferred && ltcgCombinedRate < 1) {
-    // net_now_per_share = netProceedsNow / shares
-    // p - (p - basis)*ltcg = net_now_per_share
-    // p(1 - ltcg) + basis*ltcg = net_now_per_share
-    // p = (net_now_per_share - basis*ltcg) / (1 - ltcg)
-    const netPerShare = netProceedsNow / shares
-    breakevenPrice = (netPerShare - costBasisPerShare * ltcgCombinedRate) / (1 - ltcgCombinedRate)
-    dropCushionPercent = currentPrice > 0
-      ? Math.max(0, ((currentPrice - breakevenPrice) / currentPrice) * 100)
-      : 0
+  const afterTaxIfHeld = (price: number) => {
+    const value = price * shares
+    return value - taxOnGain(value - totalCostBasis, true, settings).total
   }
 
+  // --- Break-even: price at the LTCG date where waiting nets the same as selling now.
+  // afterTaxIfHeld is increasing in price (marginal rate < 100%), so bisect.
+  let breakevenPrice = currentPrice
+  let dropCushionPercent = 0
+  const canWait = !isLoss && !isLongTerm && !stcgPreferred && shares > 0
+  if (canWait) {
+    let lo = 0, hi = currentPrice
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2
+      if (afterTaxIfHeld(mid) < netProceedsNow) lo = mid
+      else hi = mid
+    }
+    breakevenPrice = hi
+    dropCushionPercent = currentPrice > 0 ? Math.max(0, ((currentPrice - breakevenPrice) / currentPrice) * 100) : 0
+  }
+
+  // --- Probability & expected value of waiting (driftless lognormal) ---
   const { vol: annualizedVol, isOverride: volIsOverride } = effectiveVol(position)
-  const riskLevel = getRiskLevel(dropCushionPercent, isLoss, isLongTerm, stcgPreferred, daysUntilLongTerm, annualizedVol)
+  const sigma = horizonSigma(annualizedVol, daysUntilLongTerm)
+  let probBelowBreakeven = 0
+  let expectedGainFromWaiting = 0
+  let expectedShortfall = 0
+  if (canWait) {
+    probBelowBreakeven = probBelow(currentPrice, breakevenPrice, sigma)
+    for (const { z, w } of Z_GRID) {
+      const price = currentPrice * Math.exp(-0.5 * sigma * sigma + sigma * z)
+      const diff = afterTaxIfHeld(price) - netProceedsNow
+      expectedGainFromWaiting += w * diff
+      if (diff < 0) expectedShortfall += w * -diff
+    }
+  }
+
+  const upsideDownsideRatio = expectedShortfall > 0
+    ? (expectedGainFromWaiting + expectedShortfall) / expectedShortfall
+    : Infinity
+  const riskLevel = getRiskLevel(upsideDownsideRatio, isLoss, isLongTerm, stcgPreferred)
 
   return {
     position,
@@ -158,15 +219,16 @@ export function analyzePosition(position: Position, settings: UserSettings): Pos
     daysHeld,
     isLongTerm,
     daysUntilLongTerm,
+    longTermDate: format(ltDate, 'yyyy-MM-dd'),
     holdingProgressPercent,
-    federalSTCGRate,
-    federalLTCGRate,
-    stateSTCGRate,
-    stateLTCGRate,
-    stcgCombinedRate,
-    ltcgCombinedRate,
-    niitApplies,
-    nycRate,
+    federalSTCGRate: rate(taxNow.federal + taxNow.niit),
+    federalLTCGRate: rate(taxLT.federal + taxLT.niit),
+    stateSTCGRate: rate(taxNow.state),
+    stateLTCGRate: rate(taxLT.state),
+    stcgCombinedRate: rate(taxNow.total),
+    ltcgCombinedRate: rate(taxLT.total),
+    niitApplies: taxNow.niit > 0 || taxLT.niit > 0,
+    nycRate: rate(taxNow.city),
     stcgPreferred,
     taxIfSoldNowSTCG,
     taxIfSoldAsLTCG,
@@ -174,6 +236,10 @@ export function analyzePosition(position: Position, settings: UserSettings): Pos
     netProceedsNow,
     breakevenPrice,
     dropCushionPercent,
+    probBelowBreakeven,
+    expectedGainFromWaiting,
+    expectedShortfall,
+    upsideDownsideRatio,
     riskLevel,
     annualizedVol,
     volIsOverride,
@@ -195,4 +261,10 @@ export function formatPercent(n: number, decimals = 1): string {
 
 export function formatRate(r: number): string {
   return `${(r * 100).toFixed(1)}%`
+}
+
+export function formatProb(p: number): string {
+  if (p < 0.01) return '<1%'
+  if (p > 0.99) return '>99%'
+  return `${Math.round(p * 100)}%`
 }

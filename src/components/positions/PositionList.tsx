@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
+import { useViewData } from '../../store/useViewData'
 import { analyzePosition } from '../../lib/taxEngine'
 import PositionCard from './PositionCard'
 import GroupedPositionCard from './GroupedPositionCard'
@@ -23,7 +24,10 @@ const RISK_ORDER: Record<string, number> = {
 }
 
 export default function PositionList() {
-  const { positions, settings, editingPositionId, isAddingPosition, setEditingPositionId, setIsAddingPosition, clearPositions } = useAppStore()
+  const { editingPositionId, isAddingPosition, setEditingPositionId, setIsAddingPosition, clearPositions } = useAppStore()
+  const setPrivacy = useAppStore(s => s.setPrivacy)
+  const { positions, settings, isDemo } = useViewData()
+  const readOnly = isDemo
   const [sortKey, setSortKey] = useState<SortKey>('urgency')
   const [showImport, setShowImport] = useState(false)
 
@@ -38,7 +42,8 @@ export default function PositionList() {
     return Object.values(counts).some(c => c > 1)
   }, [positions])
 
-  const [viewMode, setViewMode] = useState<ViewMode>(hasGroupableTickers ? 'grouped' : 'individual')
+  const [viewMode, setViewMode] = useState<ViewMode | null>(null)
+  const effectiveViewMode: ViewMode = viewMode ?? (hasGroupableTickers ? 'grouped' : 'individual')
 
   const sorted = useMemo(() => {
     return [...analyses].sort((a, b) => {
@@ -68,6 +73,20 @@ export default function PositionList() {
     return map
   }, [sorted])
 
+  if (positions.length === 0 && isDemo) {
+    return (
+      <div className="text-center py-20 text-sm text-slate-500 space-y-3">
+        <p>There are no positions to anonymize yet.</p>
+        <button
+          onClick={() => setPrivacy({ mode: 'sample' })}
+          className="bg-[#002B45] text-white text-sm font-medium px-4 py-2 rounded-md"
+        >
+          Show a sample portfolio instead
+        </button>
+      </div>
+    )
+  }
+
   if (positions.length === 0) {
     return (
       <>
@@ -78,7 +97,7 @@ export default function PositionList() {
     )
   }
 
-  const editingPosition = editingPositionId ? positions.find(p => p.id === editingPositionId) : undefined
+  const editingPosition = !readOnly && editingPositionId ? positions.find(p => p.id === editingPositionId) : undefined
 
   return (
     <div>
@@ -94,7 +113,7 @@ export default function PositionList() {
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 className={`text-xs px-3 py-1.5 rounded transition-colors font-medium ${
-                  viewMode === mode
+                  effectiveViewMode === mode
                     ? 'bg-[#002B45] text-white'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -118,7 +137,7 @@ export default function PositionList() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        {!readOnly && <div className="flex items-center gap-2">
           <button
             onClick={() => {
               if (window.confirm(`Remove all ${positions.length} position${positions.length !== 1 ? 's' : ''}? This cannot be undone.`)) {
@@ -144,17 +163,18 @@ export default function PositionList() {
           >
             <span>+</span> Add Position
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* Cards */}
       <div className="space-y-3">
-        {viewMode === 'individual'
+        {effectiveViewMode === 'individual'
           ? sorted.map(a => (
               <PositionCard
                 key={a.position.id}
                 position={a.position}
                 onEdit={() => setEditingPositionId(a.position.id)}
+                readOnly={readOnly}
               />
             ))
           : Array.from(groupedByTicker.entries()).map(([ticker, tickerAnalyses]) =>
@@ -164,6 +184,7 @@ export default function PositionList() {
                     key={tickerAnalyses[0].position.id}
                     position={tickerAnalyses[0].position}
                     onEdit={() => setEditingPositionId(tickerAnalyses[0].position.id)}
+                    readOnly={readOnly}
                   />
                 )
                 : (
@@ -172,13 +193,14 @@ export default function PositionList() {
                     ticker={ticker}
                     analyses={tickerAnalyses}
                     onEdit={(id) => setEditingPositionId(id)}
+                    readOnly={readOnly}
                   />
                 )
             )
         }
       </div>
 
-      {isAddingPosition && (
+      {isAddingPosition && !readOnly && (
         <PositionForm onClose={() => setIsAddingPosition(false)} />
       )}
       {editingPosition && (
@@ -187,7 +209,7 @@ export default function PositionList() {
           onClose={() => setEditingPositionId(null)}
         />
       )}
-      {showImport && <SchwabImportModal onClose={() => setShowImport(false)} />}
+      {showImport && !readOnly && <SchwabImportModal onClose={() => setShowImport(false)} />}
     </div>
   )
 }

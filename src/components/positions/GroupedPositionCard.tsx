@@ -7,9 +7,10 @@ interface Props {
   ticker: string
   analyses: PositionAnalysis[]
   onEdit: (id: string) => void
+  readOnly?: boolean
 }
 
-export default function GroupedPositionCard({ ticker, analyses, onEdit }: Props) {
+export default function GroupedPositionCard({ ticker, analyses, onEdit, readOnly }: Props) {
   const [expanded, setExpanded] = useState(false)
 
   const totalValue = analyses.reduce((s, a) => s + a.currentValue, 0)
@@ -44,6 +45,7 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit }: Props)
 
   const borderAccent =
     dominantRisk === 'high' ? 'border-l-4 border-l-red-400' :
+    dominantRisk === 'moderate' ? 'border-l-4 border-l-amber-400' :
     dominantRisk === 'low' ? 'border-l-4 border-l-green-500' :
     dominantRisk === 'already-ltcg' ? 'border-l-4 border-l-blue-400' : ''
 
@@ -115,6 +117,7 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit }: Props)
               key={a.position.id}
               position={a.position}
               onEdit={() => onEdit(a.position.id)}
+              readOnly={readOnly}
             />
           ))}
         </div>

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { format } from 'date-fns'
 import { useAppStore } from '../../store/useAppStore'
 import { lookupTickerName } from '../../data/tickerNames'
 import { formatCurrency } from '../../lib/taxEngine'
@@ -177,17 +178,28 @@ function detectColumns(headers: string[]): {
   costBasisIsTotal: boolean; currentPriceIsTotal: boolean;
 } | null {
   const h = headers.map(s => s.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim())
-  const find = (...terms: string[]) => h.findIndex(col => terms.some(t => col.includes(t)))
 
-  const ticker = find('symbol', 'ticker', 'stock')
+  // Each column can be claimed once, and terms are tried in priority order, so
+  // e.g. "Acquisition Price" is never mistaken for the current price.
+  const used = new Set<number>()
+  const find = (...terms: string[]) => {
+    for (const exact of [true, false]) {
+      for (const t of terms) {
+        const idx = h.findIndex((col, i) => !used.has(i) && (exact ? col === t : col.includes(t)))
+        if (idx >= 0) { used.add(idx); return idx }
+      }
+    }
+    return -1
+  }
+
+  const ticker = find('symbol', 'ticker')
   const shares = find('available to sell', 'shares vested', 'qty', 'quantity', 'shares', 'available')
   const date = find('date acquired', 'vest date', 'acquired', 'purchase date', 'vesting date', 'vest')
+  const costBasisPerShare = find('costbasispershare', 'cost basis per share', 'fmv at vest', 'acquisition price per share', 'acquisition price', 'grant price', 'cost per share', 'price paid', 'award price')
+  const costBasisTotal = costBasisPerShare >= 0 ? -1 : find('adjusted cost', 'cost basis', 'total cost', 'acquisition value')
+  const currentPerShare = find('currentpricepershare', 'current price', 'market price', 'last price', 'price')
+  const currentTotal = currentPerShare >= 0 ? -1 : find('market value', 'current value', 'total value', 'value')
   const name = find('description', 'company', 'name', 'security')
-
-  const costBasisPerShare = find('fmv at vest', 'acquisition price per share', 'grant price', 'cost per share', 'price paid', 'award price')
-  const costBasisTotal = find('adjusted cost', 'cost basis', 'total cost', 'acquisition value', 'acquisition price')
-  const currentPerShare = find('current price', 'market price', 'price', 'last price')
-  const currentTotal = find('market value', 'current value', 'total value', 'value')
 
   const costBasis = costBasisPerShare >= 0 ? costBasisPerShare : costBasisTotal
   const costBasisIsTotal = costBasisPerShare < 0 && costBasisTotal >= 0
@@ -198,7 +210,7 @@ function detectColumns(headers: string[]): {
   return { ticker, shares, date, costBasis, currentPrice, name, costBasisIsTotal, currentPriceIsTotal }
 }
 
-function parseGenericCSV(text: string): { rows: ParsedRow[]; errors: string[] } {
+export function parseGenericCSV(text: string): { rows: ParsedRow[]; errors: string[] } {
   const errors: string[] = []
   const rows: ParsedRow[] = []
 
@@ -250,9 +262,8 @@ function parseGenericCSV(text: string): { rows: ParsedRow[]; errors: string[] } 
 
 // ── RSU Future Vest parser ────────────────────────────────────────────────────
 
-const TODAY = '2026-05-22' // current date for filtering past vests
-
 function parseEACFutureVests(text: string): FutureVestLot[] {
+  const today = format(new Date(), 'yyyy-MM-dd') // vests on or before today are already holdings
   const rsuIdx = text.indexOf('*** RESTRICTED STOCK UNITS ***')
   if (rsuIdx < 0) return []
 
@@ -313,7 +324,7 @@ function parseEACFutureVests(text: string): FutureVestLot[] {
     if (vestMatch && currentTicker) {
       const vestDate = parseDate(vestMatch[1])
       const sharesGross = parseInt(vestMatch[2], 10)
-      if (vestDate && vestDate > TODAY && !isNaN(sharesGross) && sharesGross > 0) {
+      if (vestDate && vestDate > today && !isNaN(sharesGross) && sharesGross > 0) {
         result.push({
           id: crypto.randomUUID(),
           ticker: currentTicker,
@@ -337,9 +348,9 @@ function parseText(text: string): { rows: ParsedRow[]; errors: string[] } {
 
 // ── Template CSV ──────────────────────────────────────────────────────────────
 
-const TEMPLATE_CSV = `Symbol,Shares,VestDate,CostBasisPerShare,CurrentPricePerShare,CompanyName
-GOOG,55.699,2025-06-25,167.74,378.40,Alphabet Inc.
-MSFT,100,2024-09-15,380.20,420.00,Microsoft Corporation
+export const TEMPLATE_CSV = `Symbol,Shares,VestDate,CostBasisPerShare,CurrentPricePerShare,CompanyName
+AAPL,25,2025-11-03,210.00,232.50,Apple Inc.
+MSFT,10.5,2024-09-16,415.20,440.00,Microsoft Corporation
 `
 
 function downloadTemplate() {

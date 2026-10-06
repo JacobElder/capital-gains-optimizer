@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { format } from 'date-fns'
 import { useAppStore } from '../../store/useAppStore'
 import { formatCurrency } from '../../lib/taxEngine'
 import { lookupTickerName } from '../../data/tickerNames'
@@ -20,7 +21,6 @@ interface FormState {
   volatilityOverride: string  // empty = use ticker lookup
 }
 
-const today = new Date().toISOString().split('T')[0]
 
 function emptyForm(): FormState {
   return { ticker: '', name: '', shares: '', costBasisPerShare: '', purchaseDate: '', currentPrice: '', volatilityOverride: '' }
@@ -46,6 +46,8 @@ function divideByShares(totalStr: string, sharesStr: string): string {
 }
 
 export default function PositionForm({ editingPosition, onClose }: Props) {
+  // Local calendar date (toISOString would give tomorrow's UTC date in US evenings)
+  const today = format(new Date(), 'yyyy-MM-dd')
   const { addPosition, updatePosition } = useAppStore()
   const [form, setForm] = useState<FormState>(
     editingPosition ? positionToForm(editingPosition) : emptyForm()

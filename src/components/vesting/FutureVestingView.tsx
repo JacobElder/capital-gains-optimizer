@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
 import { useAppStore } from '../../store/useAppStore'
+import { useViewData } from '../../store/useViewData'
 import { formatCurrency } from '../../lib/taxEngine'
 import type { FutureVestLot } from '../../types'
 
@@ -78,7 +79,8 @@ function VestTooltip({ active, payload, priceMap }: TooltipProps) {
 }
 
 export default function FutureVestingView() {
-  const { futureVests, positions, clearFutureVests } = useAppStore()
+  const clearFutureVests = useAppStore(s => s.clearFutureVests)
+  const { futureVests, positions, isDemo } = useViewData()
 
   // Build a price map from current positions
   const priceMap = useMemo(() => {
@@ -88,6 +90,24 @@ export default function FutureVestingView() {
     }
     return map
   }, [positions])
+
+  const months = useMemo(() => groupByMonth(futureVests), [futureVests])
+
+  // Summary stats
+  const totalShares = futureVests.reduce((s, v) => s + v.sharesGross, 0)
+  const uniqueTickers = useMemo(() => [...new Set(futureVests.map(v => v.ticker))], [futureVests])
+
+  // Estimated value: group by ticker, multiply by known price
+  const estimatedGrossValue = useMemo(() => {
+    let total = 0
+    for (const ticker of uniqueTickers) {
+      const price = priceMap[ticker]
+      if (price == null) continue
+      const shares = futureVests.filter(v => v.ticker === ticker).reduce((s, v) => s + v.sharesGross, 0)
+      total += shares * price
+    }
+    return total
+  }, [futureVests, priceMap, uniqueTickers])
 
   if (futureVests.length === 0) {
     return (
@@ -101,24 +121,6 @@ export default function FutureVestingView() {
       </div>
     )
   }
-
-  const months = useMemo(() => groupByMonth(futureVests), [futureVests])
-
-  // Summary stats
-  const totalShares = futureVests.reduce((s, v) => s + v.sharesGross, 0)
-  const uniqueTickers = [...new Set(futureVests.map(v => v.ticker))]
-
-  // Estimated value: group by ticker, multiply by known price
-  const estimatedGrossValue = useMemo(() => {
-    let total = 0
-    for (const ticker of uniqueTickers) {
-      const price = priceMap[ticker]
-      if (price == null) continue
-      const shares = futureVests.filter(v => v.ticker === ticker).reduce((s, v) => s + v.sharesGross, 0)
-      total += shares * price
-    }
-    return total
-  }, [futureVests, priceMap, uniqueTickers])
 
   const hasAnyPrice = uniqueTickers.some(t => priceMap[t] != null)
 
@@ -192,7 +194,8 @@ export default function FutureVestingView() {
         <div className="mt-4 bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5 text-xs">
           <span className="text-amber-700 font-semibold">Withholding estimate:</span>
           <span className="text-slate-600 ml-1">
-            Typical RSU withholding is 40–50%. At 46% withheld, estimated net shares ≈{' '}
+            Assumes 46% of shares withheld: 22% federal supplemental withholding (37% on supplemental wages
+            above $1M), plus FICA and state tax, varies by employer and state. Estimated net shares ≈{' '}
             <span className="font-mono font-semibold text-slate-900">{estimatedNetShares.toLocaleString()}</span>
             {hasAnyPrice && estimatedGrossValue > 0 && (
               <span className="text-slate-600"> ({formatCurrency(estimatedGrossValue * RETENTION)} est. net value)</span>
@@ -293,14 +296,14 @@ export default function FutureVestingView() {
       </div>
 
       {/* Clear button */}
-      <div className="flex justify-end">
+      {!isDemo && <div className="flex justify-end">
         <button
           onClick={handleClear}
           className="border border-red-200 hover:border-red-300 text-red-500 hover:text-red-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white"
         >
           Clear Vesting Data
         </button>
-      </div>
+      </div>}
     </div>
   )
 }

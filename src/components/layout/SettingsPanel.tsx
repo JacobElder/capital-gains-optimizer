@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
+import { useViewData } from '../../store/useViewData'
 import { SORTED_STATES, STATE_TAX_DATA } from '../../data/stateTaxData'
 import type { FilingStatus } from '../../types'
 
@@ -11,9 +12,17 @@ const FILING_STATUS_LABELS: Record<FilingStatus, string> = {
 }
 
 export default function SettingsPanel() {
-  const { settings, setSettings } = useAppStore()
+  const setSettings = useAppStore(s => s.setSettings)
+  // Filing status and state are shared with demo mode; income is replaced by a
+  // randomized figure while a demo is showing, and editing it is disabled.
+  const { settings, isDemo } = useViewData()
   const [collapsed, setCollapsed] = useState(false)
   const [incomeStr, setIncomeStr] = useState(settings.annualTaxableIncome.toLocaleString())
+
+  // Keep the text box in sync when income changes elsewhere (demo toggle, reshuffle)
+  useEffect(() => {
+    setIncomeStr(settings.annualTaxableIncome.toLocaleString())
+  }, [settings.annualTaxableIncome])
 
   const currentState = STATE_TAX_DATA[settings.stateCode]
 
@@ -63,8 +72,8 @@ export default function SettingsPanel() {
 
           <div>
             <label className="block text-xs text-slate-500 mb-1.5 font-medium">
-              Annual Taxable Income
-              <span className="text-slate-400 ml-1">(after deductions)</span>
+              Taxable Income This Year
+              <span className="text-slate-400 ml-1">(after deductions, excluding these sales)</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
@@ -73,7 +82,9 @@ export default function SettingsPanel() {
                 value={incomeStr}
                 onChange={e => setIncomeStr(e.target.value)}
                 onBlur={handleIncomeBlur}
-                className="w-full bg-white border border-slate-300 text-slate-900 rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B6B3A] focus:border-transparent font-mono"
+                disabled={isDemo}
+                title={isDemo ? 'Randomized for the demo — switch to "My data" to edit' : undefined}
+                className="w-full bg-white border border-slate-300 text-slate-900 rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B6B3A] focus:border-transparent font-mono disabled:bg-slate-50 disabled:text-slate-500"
                 placeholder="150,000"
               />
             </div>
@@ -84,8 +95,8 @@ export default function SettingsPanel() {
             <select
               value={settings.stateCode}
               onChange={e => {
-                setSettings({ stateCode: e.target.value })
-                if (e.target.value !== 'NY') setSettings({ nycResident: false })
+                const stateCode = e.target.value
+                setSettings(stateCode === 'NY' ? { stateCode } : { stateCode, nycResident: false })
               }}
               className="w-full bg-white border border-slate-300 text-slate-900 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B6B3A] focus:border-transparent"
             >

@@ -4,7 +4,7 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
 import type { PositionAnalysis } from '../../types'
-import { formatCurrency, riskSigmaContext } from '../../lib/taxEngine'
+import { formatCurrency } from '../../lib/taxEngine'
 
 const RISK_COLOR: Record<string, string> = {
   high: '#ef4444',
@@ -15,18 +15,10 @@ const RISK_COLOR: Record<string, string> = {
   'stcg-preferred': '#f97316',
 }
 
-function normalCDF(x: number): number {
-  const t = 1 / (1 + 0.2316419 * Math.abs(x))
-  const d = 0.3989423 * Math.exp((-x * x) / 2)
-  const p = t * (0.3193815 + t * (-0.3565638 + t * (1.7814779 + t * (-1.8212560 + t * 1.3302744))))
-  const cdf = 1 - d * p
-  return x >= 0 ? cdf : 1 - cdf
-}
-
+// P(price stays above break-even through the LTCG date), using each lot's own volatility
 function positionProbability(a: PositionAnalysis): number | null {
   if (a.isLoss || a.isLongTerm || a.stcgPreferred) return null
-  const { sigmaPct } = riskSigmaContext(a.daysUntilLongTerm)
-  return normalCDF(a.dropCushionPercent / sigmaPct)
+  return 1 - a.probBelowBreakeven
 }
 
 function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: ScatterPoint }> }) {
@@ -58,7 +50,7 @@ function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array
         </div>
         {d.prob != null && (
           <div className="flex justify-between gap-4 pt-1 border-t border-slate-100 mt-1">
-            <span className="text-slate-400">P(reach LTCG)</span>
+            <span className="text-slate-400">P(waiting wins)</span>
             <span className={`font-mono font-semibold ${d.prob >= 0.85 ? 'text-green-700' : d.prob >= 0.7 ? 'text-amber-600' : 'text-red-600'}`}>
               {(d.prob * 100).toFixed(0)}%
             </span>
@@ -89,7 +81,7 @@ interface Props {
 export default function PortfolioDashboard({ analyses }: Props) {
   const {
     totalValue, totalGain, totalSavings,
-    byRisk, weightedProbability, scatterData,
+    byRisk, weightedProbability, expectedShortfall, scatterData,
     totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting,
   } = useMemo(() => {
     const totalValue = analyses.reduce((s, a) => s + a.currentValue, 0)
@@ -105,11 +97,10 @@ export default function PortfolioDashboard({ analyses }: Props) {
       ltcg: analyses.filter(a => a.isLongTerm),
     }
 
-    const weightedNum = actionable.reduce((s, a) => {
-      const prob = positionProbability(a) ?? 1
-      return s + prob * a.taxSavingsFromWaiting
-    }, 0)
+    // Savings-weighted average of each lot's chance of ending above break-even
+    const weightedNum = actionable.reduce((s, a) => s + (positionProbability(a) ?? 1) * a.taxSavingsFromWaiting, 0)
     const weightedProbability = totalSavings > 0 ? weightedNum / totalSavings : null
+    const expectedShortfall = actionable.reduce((s, a) => s + a.expectedShortfall, 0)
 
     const scatterData: ScatterPoint[] = analyses.map(a => ({
       x: a.isLongTerm ? 0 : a.daysUntilLongTerm,
@@ -128,12 +119,18 @@ export default function PortfolioDashboard({ analyses }: Props) {
     const totalLosses = losingPositions.reduce((s, a) => s + Math.abs(a.gainAmount), 0)
     const totalGainsOnly = analyses.filter(a => a.gainAmount > 0).reduce((s, a) => s + a.gainAmount, 0)
     const netGainAfterHarvesting = Math.max(0, totalGainsOnly - totalLosses)
-    const avgSTCGRate = losingPositions.length > 0
-      ? losingPositions.reduce((s, a) => s + a.stcgCombinedRate, 0) / losingPositions.length
-      : (analyses[0]?.stcgCombinedRate ?? 0.37)
-    const taxSavedByHarvesting = Math.min(totalLosses, totalGainsOnly) * avgSTCGRate
+    // A harvested loss saves tax at the rate of whatever gain it offsets: the
+    // short-term rate if it offsets short-term gains, the long-term rate otherwise.
+    // Rates come from the gaining lots (losing lots have no gain, so no rate).
+    const gainers = analyses.filter(a => a.gainAmount > 0)
+    const maxRate = (pick: (a: PositionAnalysis) => number) => gainers.reduce((m, a) => Math.max(m, pick(a)), 0)
+    const offset = Math.min(totalLosses, totalGainsOnly)
+    const taxSavedByHarvesting = {
+      low: offset * maxRate(a => a.ltcgCombinedRate),
+      high: offset * maxRate(a => a.stcgCombinedRate),
+    }
 
-    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, scatterData, totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting }
+    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, expectedShortfall, scatterData, totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting }
   }, [analyses])
 
   const n = analyses.length
@@ -153,7 +150,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
           label="Potential Tax Savings"
           value={formatCurrency(totalSavings)}
           positive={totalSavings > 0}
-          sublabel="if STCG lots held to LTCG"
+          sublabel={`if prices hold · expected shortfall ${formatCurrency(expectedShortfall)}`}
         />
         <div>
           <div className="text-xs text-slate-400 mb-1 font-medium">Chance of Capturing Savings</div>
@@ -165,7 +162,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
               }`}>
                 {(weightedProbability * 100).toFixed(0)}%
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">prob. STCG lots stay above break-even til LTCG</div>
+              <div className="text-xs text-slate-400 mt-0.5">savings-weighted chance each lot ends above break-even</div>
             </div>
           ) : (
             <div className="text-slate-400 text-sm">—</div>
@@ -216,7 +213,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
             </div>
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400 justify-end">
-            {[['#ef4444', 'High'], ['#f59e0b', 'Moderate'], ['#22c55e', 'Low'], ['#94a3b8', 'Loss/LTCG']].map(([c, l]) => (
+            {[['#ef4444', 'High'], ['#f59e0b', 'Moderate'], ['#22c55e', 'Low'], ['#3b82f6', 'LTCG'], ['#94a3b8', 'Loss']].map(([c, l]) => (
               <span key={l} className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: c }} />
                 {l}
@@ -263,7 +260,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
           </ScatterChart>
         </ResponsiveContainer>
         <div className="text-xs text-slate-400 -mt-1">
-          Top-left = high savings + close deadline (most urgent) · Top-right = high savings + time to wait
+          Top-left = high savings, deadline close (little time for the price to move) · Top-right = high savings, long wait (most exposure)
         </div>
       </div>
 
@@ -292,8 +289,11 @@ export default function PortfolioDashboard({ analyses }: Props) {
             <div>
               <div className="text-xs text-slate-400 mb-0.5">Est. Tax Saved</div>
               <div className="font-mono font-bold text-lg text-green-700">
-                {formatCurrency(taxSavedByHarvesting)}
+                {taxSavedByHarvesting.low === taxSavedByHarvesting.high
+                  ? formatCurrency(taxSavedByHarvesting.high)
+                  : `${formatCurrency(taxSavedByHarvesting.low)}–${formatCurrency(taxSavedByHarvesting.high)}`}
               </div>
+              <div className="text-xs text-slate-400 mt-0.5">only if those gains are realized this year</div>
             </div>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed bg-amber-50 border border-amber-200 rounded px-3 py-2">

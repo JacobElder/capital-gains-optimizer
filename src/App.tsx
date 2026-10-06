@@ -3,13 +3,14 @@ import Header from './components/layout/Header'
 import SettingsPanel from './components/layout/SettingsPanel'
 import PositionList from './components/positions/PositionList'
 import FutureVestingView from './components/vesting/FutureVestingView'
-import { useAppStore } from './store/useAppStore'
+import { useViewData } from './store/useViewData'
+import { TAX_YEAR } from './data/federalTaxBrackets'
 
 type Tab = 'positions' | 'vesting'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('positions')
-  const futureVests = useAppStore(s => s.futureVests)
+  const { futureVests } = useViewData()
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -51,7 +52,8 @@ export default function App() {
         {tab === 'positions' ? <PositionList /> : <FutureVestingView />}
       </main>
       <footer className="max-w-4xl mx-auto px-4 py-6 text-center text-xs text-slate-400 border-t border-slate-200 mt-6">
-        Capital gains tax data reflects 2025 federal and state rates. This tool is for planning purposes only
+        Federal brackets reflect {TAX_YEAR} IRS figures; state rates are 2025 figures and flat-rate states use their top
+        rate. Each lot is analyzed on its own, on top of the income you enter. This tool is for planning purposes only
         and does not constitute tax advice. Consult a qualified CPA or tax attorney before making investment decisions.
       </footer>
     </div>

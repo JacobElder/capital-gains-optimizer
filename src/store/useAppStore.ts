@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Position, UserSettings, FutureVestLot } from '../types'
+import type { Position, UserSettings, FutureVestLot, PrivacySettings } from '../types'
+import { newSeed } from '../lib/demoData'
 
 interface AppState {
   settings: UserSettings
   positions: Position[]
   futureVests: FutureVestLot[]
+  privacy: PrivacySettings
   editingPositionId: string | null
   isAddingPosition: boolean
 
@@ -18,7 +20,14 @@ interface AppState {
   clearFutureVests: () => void
   setEditingPositionId: (id: string | null) => void
   setIsAddingPosition: (val: boolean) => void
+  setPrivacy: (updates: Partial<PrivacySettings>) => void
+  reshuffleDemo: () => void
 }
+
+// `?demo` in the URL opens straight into the sample portfolio, so a shared
+// link never shows whatever happens to be in the viewer's localStorage.
+const demoFromUrl = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('demo')
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -31,6 +40,7 @@ export const useAppStore = create<AppState>()(
       },
       positions: [],
       futureVests: [],
+      privacy: { mode: 'off', seed: newSeed(), maskTickers: true },
       editingPositionId: null,
       isAddingPosition: false,
 
@@ -67,10 +77,21 @@ export const useAppStore = create<AppState>()(
 
       setEditingPositionId: (id) => set({ editingPositionId: id }),
       setIsAddingPosition: (val) => set({ isAddingPosition: val }),
+
+      setPrivacy: (updates) =>
+        set((s) => ({ privacy: { ...s.privacy, ...updates } })),
+      reshuffleDemo: () =>
+        set((s) => ({ privacy: { ...s.privacy, seed: newSeed() } })),
     }),
     {
       name: 'capital-gains-optimizer',
-      partialize: (s) => ({ settings: s.settings, positions: s.positions, futureVests: s.futureVests }),
+      partialize: (s) => ({ settings: s.settings, positions: s.positions, futureVests: s.futureVests, privacy: s.privacy }),
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<AppState>) }
+        merged.privacy = { ...current.privacy, ...(persisted as Partial<AppState>)?.privacy }
+        if (demoFromUrl) merged.privacy = { ...merged.privacy, mode: 'sample' }
+        return merged
+      },
     }
   )
 )

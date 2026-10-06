@@ -1,8 +1,9 @@
 import type { StateTaxInfo, FilingStatus } from '../types'
+import { taxOnSlice } from './federalTaxBrackets'
 
-// 2025 state capital gains tax data
-// For states with brackets, rate shown is top marginal rate used for display;
-// actual rate is bracket-looked-up in the tax engine.
+// State capital gains tax data (2025 rates; verify flat rates against your state for 2026).
+// Flat-rate entries use the TOP marginal rate, which overstates tax for lower
+// incomes in graduated states. Bracketed states are integrated in stateTaxOnGain.
 export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   AL: {
     code: 'AL', name: 'Alabama',
@@ -18,15 +19,15 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   AZ: {
     code: 'AZ', name: 'Arizona',
-    stcgRate: 0.025, ltcgRate: 0.025,
+    stcgRate: 0.025, ltcgRate: 0.01875,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '2.5% flat rate',
+    notes: '2.5% flat rate. 25% subtraction for LTCG on assets bought after 2011 → effective 1.875%.',
   },
   AR: {
     code: 'AR', name: 'Arkansas',
-    stcgRate: 0.039, ltcgRate: 0.039,
+    stcgRate: 0.039, ltcgRate: 0.0195,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: '3.9% top rate (2025)',
+    notes: '3.9% top rate. 50% of LTCG is exempt → effective 1.95%.',
   },
   CA: {
     code: 'CA', name: 'California',
@@ -196,9 +197,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   MT: {
     code: 'MT', name: 'Montana',
-    stcgRate: 0.059, ltcgRate: 0.059,
-    treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 5.9%. Small CG deduction may apply.',
+    stcgRate: 0.059, ltcgRate: 0.041,
+    treatsCGAsOrdinaryIncome: false, hasBrackets: false,
+    notes: 'Top ordinary rate 5.9%. Since 2024 LTCG has its own schedule: 3.0% / 4.1% (top rate used).',
   },
   NE: {
     code: 'NE', name: 'Nebraska',
@@ -279,7 +280,7 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
         { upTo: Infinity, rate: 0.109 },
       ],
     },
-    notes: 'NYC residents add up to 3.876% city income tax (not included).',
+    notes: 'NYC residents: tick the box below to add city income tax (up to 3.876%).',
   },
   NC: {
     code: 'NC', name: 'North Carolina',
@@ -289,9 +290,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   ND: {
     code: 'ND', name: 'North Dakota',
-    stcgRate: 0.025, ltcgRate: 0.025,
+    stcgRate: 0.025, ltcgRate: 0.015,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 2.5%',
+    notes: 'Top rate 2.5%. 40% LTCG exclusion → effective 1.5%.',
   },
   OH: {
     code: 'OH', name: 'Ohio',
@@ -369,7 +370,7 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
     code: 'WA', name: 'Washington',
     stcgRate: 0, ltcgRate: 0.07,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: 'No income tax on STCG. LTCG over $262K threshold taxed at 7%. Unique: STCG may be preferred for large gains.',
+    notes: 'No tax on STCG. LTCG above a $278K annual deduction taxed at 7%, and 9.9% above $1M. Only very large gains are affected; for those, selling short-term can be cheaper.',
   },
   WV: {
     code: 'WV', name: 'West Virginia',
@@ -415,6 +416,36 @@ export function getStateLTCGRate(stateCode: string, income: number, status: Fili
   // Bracketed states tax CG as ordinary income — same rate for both STCG and LTCG
   const brackets = status === 'mfj' ? state.brackets.mfj : state.brackets.single
   return brackets.find(b => income <= b.upTo)?.rate ?? state.ltcgRate
+}
+
+// Washington's capital gains excise tax (long-term gains only). The deduction is
+// per return and CPI-indexed (2025 figure). Assumes no other WA-taxable LTCG this year.
+const WA_DEDUCTION = 278_000
+const WA_SURTAX_THRESHOLD = 1_000_000
+
+function stateBrackets(state: StateTaxInfo, status: FilingStatus) {
+  if (!state.hasBrackets || !state.brackets) return null
+  // HOH and MFS fall back to the single schedule (approximation)
+  return status === 'mfj' ? state.brackets.mfj : state.brackets.single
+}
+
+/**
+ * State tax on a gain stacked on top of `income`. Bracketed states are
+ * integrated across brackets; flat-rate states use their (top) rate.
+ */
+export function stateTaxOnGain(
+  stateCode: string, income: number, gain: number, status: FilingStatus, longTerm: boolean,
+): number {
+  const state = STATE_TAX_DATA[stateCode]
+  if (!state || gain <= 0) return 0
+  if (stateCode === 'WA') {
+    if (!longTerm) return 0
+    const taxable = Math.max(0, gain - WA_DEDUCTION)
+    return 0.07 * Math.min(taxable, WA_SURTAX_THRESHOLD) + 0.099 * Math.max(0, taxable - WA_SURTAX_THRESHOLD)
+  }
+  const brackets = stateBrackets(state, status)
+  if (brackets) return taxOnSlice(income, income + gain, brackets)
+  return gain * (longTerm ? state.ltcgRate : state.stcgRate)
 }
 
 export const SORTED_STATES = Object.values(STATE_TAX_DATA).sort((a, b) =>

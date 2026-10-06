@@ -1,14 +1,24 @@
 import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
-import { analyzePosition, formatCurrency, formatRate, riskSigmaContext } from '../../lib/taxEngine'
+import { useViewData } from '../../store/useViewData'
+import { analyzePosition, formatCurrency, formatRate, formatProb } from '../../lib/taxEngine'
 import RiskBadge from '../ui/RiskBadge'
 import HoldingProgressBar from '../charts/HoldingProgressBar'
 import BreakevenChart from '../charts/BreakevenChart'
-import type { Position } from '../../types'
+import type { Position, RiskLevel } from '../../types'
 
 interface Props {
   position: Position
   onEdit: () => void
+  readOnly?: boolean
+}
+
+// One palette for every risk-colored element on the card, so the break-even
+// box, the slider and the badge can never disagree.
+const RISK_TONE: Partial<Record<RiskLevel, { box: string; text: string; bar: string; dot: string }>> = {
+  high: { box: 'bg-red-50 border-red-200', text: 'text-red-700', bar: 'bg-red-400', dot: 'bg-red-500' },
+  moderate: { box: 'bg-amber-50 border-amber-200', text: 'text-amber-700', bar: 'bg-amber-400', dot: 'bg-amber-500' },
+  low: { box: 'bg-green-50 border-green-200', text: 'text-green-700', bar: 'bg-green-500', dot: 'bg-green-500' },
 }
 
 function GainArrow({ positive }: { positive: boolean }) {
@@ -19,10 +29,13 @@ function GainArrow({ positive }: { positive: boolean }) {
 
 function RiskVerdict({
   riskLevel, dropCushionPercent, taxSavings, stcgPreferred,
-  breakevenPrice, costBasis, daysUntilLongTerm,
+  breakevenPrice, costBasis, daysUntilLongTerm, probBelowBreakeven, expectedShortfall, isShortTermLoss,
+  upsideDownsideRatio,
 }: {
   riskLevel: string; dropCushionPercent: number; taxSavings: number; stcgPreferred: boolean
   breakevenPrice: number; costBasis: number; daysUntilLongTerm: number
+  probBelowBreakeven: number; expectedShortfall: number; isShortTermLoss: boolean
+  upsideDownsideRatio: number
 }) {
   const gainAtBreakeven = costBasis > 0
     ? ((breakevenPrice - costBasis) / costBasis) * 100
@@ -35,7 +48,8 @@ function RiskVerdict({
           <span>!</span> Sell Before Long-Term Threshold
         </div>
         <p className="text-orange-700 text-xs leading-relaxed">
-          Your state's LTCG rate is higher than its STCG rate. Selling before the 1-year mark results in less tax.
+          For this gain, long-term treatment costs more tax than short-term (e.g. Washington's 7% tax on long-term
+          gains above $278K). Selling before the 1-year mark results in less tax.
         </p>
       </div>
     )
@@ -58,18 +72,25 @@ function RiskVerdict({
         <div className="flex items-center gap-2 text-slate-700 font-semibold mb-1">
           <span>▼</span> Unrealized Loss — Consider Tax-Loss Harvesting
         </div>
-        <p className="text-slate-500 text-xs">Selling at a loss can offset other capital gains and reduce your overall tax bill.</p>
+        <p className="text-slate-500 text-xs">
+          Selling at a loss can offset other capital gains plus up to $3,000 of ordinary income per year.
+          {isShortTermLoss && ' Harvesting before the 1-year mark keeps the loss short-term, so it nets first against short-term gains, which are taxed at the higher rate.'}
+          {' '}Avoid buying it back within 30 days (wash-sale rule).
+        </p>
       </div>
     )
   }
 
   const daysNote = daysUntilLongTerm === 1 ? '1 day' : `${daysUntilLongTerm} days`
+  const odds = formatProb(probBelowBreakeven)
+  const shortfall = formatCurrency(expectedShortfall)
+  const ratio = formatRatio(upsideDownsideRatio)
 
   const verdicts: Record<string, { icon: string; title: string; body: string; note: string; classes: string; noteClasses: string }> = {
     high: {
       icon: '▲',
       title: 'Risky to Wait — Tax Advantage Thin',
-      body: `The stock only needs to drop ${dropCushionPercent.toFixed(1)}% over the next ${daysNote} to make selling today equally profitable after tax. A ${dropCushionPercent.toFixed(1)}% swing is within normal daily volatility for most stocks, so the ${formatCurrency(taxSavings)} tax savings carry real risk of evaporating.`,
+      body: `A ${dropCushionPercent.toFixed(1)}% drop over the next ${daysNote} would erase the ${formatCurrency(taxSavings)} tax advantage, and at this stock's volatility there is roughly a ${odds} chance of that. For every $1 waiting could cost you, you expect only ${ratio} back — close to a coin flip. Waiting only makes sense if you would hold this stock anyway.`,
       note: gainAtBreakeven > 0
         ? `Note: "Risk" here refers only to the tax decision. Even at the break-even price (${formatCurrency(breakevenPrice, 2)}), you'd still show a ${gainAtBreakeven.toFixed(0)}% gain from your cost basis.`
         : '',
@@ -79,7 +100,7 @@ function RiskVerdict({
     moderate: {
       icon: '●',
       title: 'Moderate — Weigh Your Conviction',
-      body: `The stock needs to drop ${dropCushionPercent.toFixed(1)}% over the next ${daysNote} for selling today to be equally good after tax. Based on typical large-cap volatility, that's a plausible but not likely move in this window. The ${formatCurrency(taxSavings)} tax savings are meaningful — if you believe the stock is stable, waiting is probably right.`,
+      body: `The stock would need to drop ${dropCushionPercent.toFixed(1)}% over the next ${daysNote} for selling today to have been better — roughly a ${odds} chance at its volatility. Waiting is worth ${formatCurrency(taxSavings)} if the price holds; for every $1 it could cost you, you expect about ${ratio} back (expected shortfall ${shortfall}).`,
       note: gainAtBreakeven > 0
         ? `Note: This risk rating is about the tax optimization window only — not your overall investment. Even at the break-even price (${formatCurrency(breakevenPrice, 2)}), you'd still be up ${gainAtBreakeven.toFixed(0)}% from your cost basis.`
         : '',
@@ -89,7 +110,7 @@ function RiskVerdict({
     low: {
       icon: '●',
       title: 'Low Risk — Worth Waiting',
-      body: `The stock would need to fall ${dropCushionPercent.toFixed(1)}% in the next ${daysNote} for selling today to be equally good after tax. Based on typical large-cap volatility, that would require an unusual move in a short window. With ${formatCurrency(taxSavings)} in tax savings on the line, waiting strongly favors the LTCG rate.`,
+      body: `The stock would need to fall ${dropCushionPercent.toFixed(1)}% in the next ${daysNote} for selling today to have been better — roughly a ${odds} chance at its volatility. For every $1 waiting could cost you, you expect about ${ratio} back, so with ${formatCurrency(taxSavings)} in tax savings on the line, waiting is favored.`,
       note: gainAtBreakeven > 0
         ? `Even at the break-even price (${formatCurrency(breakevenPrice, 2)}), you'd still be up ${gainAtBreakeven.toFixed(0)}% from your cost basis.`
         : '',
@@ -114,8 +135,9 @@ function RiskVerdict({
   )
 }
 
-export default function PositionCard({ position, onEdit }: Props) {
-  const { settings, deletePosition } = useAppStore()
+export default function PositionCard({ position, onEdit, readOnly }: Props) {
+  const deletePosition = useAppStore(s => s.deletePosition)
+  const { settings } = useViewData()
   const [showChart, setShowChart] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -129,14 +151,16 @@ export default function PositionCard({ position, onEdit }: Props) {
     riskLevel,
     isLongTerm, daysHeld, daysUntilLongTerm, holdingProgressPercent,
     stcgCombinedRate, ltcgCombinedRate, niitApplies, nycRate, stcgPreferred,
+    probBelowBreakeven, expectedGainFromWaiting, expectedShortfall, longTermDate,
   } = analysis
 
   const { annualizedVol, volIsOverride } = analysis
   const canShowBreakeven = !isLoss && !isLongTerm && !stcgPreferred
-  const sigmaCtx = canShowBreakeven ? riskSigmaContext(daysUntilLongTerm, annualizedVol) : null
+  const tone = RISK_TONE[riskLevel] ?? RISK_TONE.low!
 
   const borderAccent =
     riskLevel === 'high' ? 'border-l-4 border-l-red-400' :
+    riskLevel === 'moderate' ? 'border-l-4 border-l-amber-400' :
     riskLevel === 'low' ? 'border-l-4 border-l-green-500' :
     riskLevel === 'already-ltcg' ? 'border-l-4 border-l-blue-400' : ''
 
@@ -165,6 +189,7 @@ export default function PositionCard({ position, onEdit }: Props) {
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <RiskBadge riskLevel={riskLevel} dropCushionPercent={canShowBreakeven ? dropCushionPercent : undefined} />
+          {!readOnly && <>
           <button
             onClick={onEdit}
             className="text-slate-400 hover:text-slate-600 transition-colors px-1.5 py-1 text-xs rounded hover:bg-slate-100"
@@ -196,6 +221,7 @@ export default function PositionCard({ position, onEdit }: Props) {
               🗑️
             </button>
           )}
+          </>}
         </div>
       </div>
 
@@ -222,6 +248,7 @@ export default function PositionCard({ position, onEdit }: Props) {
           daysUntilLongTerm={daysUntilLongTerm}
           isLongTerm={isLongTerm}
           progressPercent={holdingProgressPercent}
+          longTermDate={longTermDate}
         />
       </div>
 
@@ -237,14 +264,14 @@ export default function PositionCard({ position, onEdit }: Props) {
                   Sell Now <span className="text-red-500">(STCG)</span>
                 </div>
                 <div className="font-mono text-red-600 font-bold text-sm">{formatCurrency(taxIfSoldNowSTCG)}</div>
-                <div className="text-xs text-slate-400 mt-0.5">{formatRate(stcgCombinedRate)} rate</div>
+                <div className="text-xs text-slate-400 mt-0.5">{formatRate(stcgCombinedRate)} effective</div>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-center">
                 <div className="text-xs text-slate-500 mb-1">
                   Wait for <span className="text-green-600">(LTCG)</span>
                 </div>
                 <div className="font-mono text-green-700 font-bold text-sm">{formatCurrency(taxIfSoldAsLTCG)}</div>
-                <div className="text-xs text-slate-400 mt-0.5">{formatRate(ltcgCombinedRate)} rate</div>
+                <div className="text-xs text-slate-400 mt-0.5">{formatRate(ltcgCombinedRate)} effective</div>
               </div>
               <div className={`rounded-md p-3 text-center border ${
                 taxSavingsFromWaiting > 0
@@ -255,17 +282,17 @@ export default function PositionCard({ position, onEdit }: Props) {
                 <div className={`font-mono font-bold text-sm ${taxSavingsFromWaiting > 0 ? 'text-green-700' : 'text-red-600'}`}>
                   {taxSavingsFromWaiting >= 0 ? '+' : ''}{formatCurrency(taxSavingsFromWaiting)}
                 </div>
-                <div className="text-xs text-slate-400 mt-0.5">by waiting</div>
+                <div className="text-xs text-slate-400 mt-0.5">by waiting, if price holds</div>
               </div>
             </div>
             {niitApplies && (
               <p className="text-xs text-amber-600 mt-2">
-                ⚠️ +3.8% NIIT included — applies because your income exceeds the federal threshold.
+                ⚠️ 3.8% NIIT included on the part of this gain that pushes income past the federal threshold.
               </p>
             )}
             {nycRate > 0 && (
               <p className="text-xs text-amber-600 mt-1">
-                ⚠️ +{(nycRate * 100).toFixed(3)}% NYC city tax included in rates above.
+                ⚠️ NYC city tax included in rates above ({formatRate(nycRate)} effective).
               </p>
             )}
           </div>
@@ -280,8 +307,8 @@ export default function PositionCard({ position, onEdit }: Props) {
             <div className="space-y-1">
               <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Break-Even Analysis</div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                The break-even price is the lowest price at which waiting for LTCG still gives you the same
-                after-tax proceeds as selling today.
+                The break-even price is the price on the LTCG date at which waiting nets the same after-tax
+                proceeds as selling today. If the stock ends below it, selling today would have been better.
               </p>
             </div>
 
@@ -291,18 +318,9 @@ export default function PositionCard({ position, onEdit }: Props) {
                 <div className="font-mono text-slate-900 font-bold text-sm">{formatCurrency(netProceedsNow)}</div>
                 <div className="text-xs text-slate-400">after {formatRate(stcgCombinedRate)} STCG tax</div>
               </div>
-              <div className={`rounded-md p-3 border ${
-                dropCushionPercent < 5
-                  ? 'bg-red-50 border-red-200'
-                  : dropCushionPercent < 15
-                  ? 'bg-amber-50 border-amber-200'
-                  : 'bg-green-50 border-green-200'
-              }`}>
+              <div className={`rounded-md p-3 border ${tone.box}`}>
                 <div className="text-xs text-slate-500 mb-1">Break-Even Price</div>
-                <div className={`font-mono font-bold text-sm ${
-                  dropCushionPercent < 5 ? 'text-red-700' :
-                  dropCushionPercent < 15 ? 'text-amber-700' : 'text-green-700'
-                }`}>{formatCurrency(breakevenPrice, 2)}</div>
+                <div className={`font-mono font-bold text-sm ${tone.text}`}>{formatCurrency(breakevenPrice, 2)}</div>
                 <div className="text-xs text-slate-400">
                   {dropCushionPercent.toFixed(1)}% below current
                 </div>
@@ -330,10 +348,7 @@ export default function PositionCard({ position, onEdit }: Props) {
                       style={{ left: `${basisPos}%`, width: `${currentPos - basisPos}%` }}
                     />
                     <div
-                      className={`absolute top-2 h-1 rounded-full ${
-                        dropCushionPercent < 5 ? 'bg-red-400' :
-                        dropCushionPercent < 15 ? 'bg-amber-400' : 'bg-green-500'
-                      }`}
+                      className={`absolute top-2 h-1 rounded-full ${tone.bar}`}
                       style={{ left: `${breakevenPos}%`, width: `${currentPos - breakevenPos}%` }}
                     />
                     <div
@@ -341,10 +356,7 @@ export default function PositionCard({ position, onEdit }: Props) {
                       style={{ left: `${basisPos}%` }}
                     />
                     <div
-                      className={`absolute top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white -translate-x-1/2 ${
-                        dropCushionPercent < 5 ? 'bg-red-500' :
-                        dropCushionPercent < 15 ? 'bg-amber-500' : 'bg-green-500'
-                      }`}
+                      className={`absolute top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white -translate-x-1/2 ${tone.dot}`}
                       style={{ left: `${breakevenPos}%` }}
                     />
                     <div
@@ -355,10 +367,7 @@ export default function PositionCard({ position, onEdit }: Props) {
                 )
               })()}
               <div className="flex justify-between text-xs text-slate-400 mt-3">
-                <div className={`flex items-center gap-1 ${
-                  dropCushionPercent < 5 ? 'text-red-600' :
-                  dropCushionPercent < 15 ? 'text-amber-600' : 'text-green-600'
-                }`}>
+                <div className={`flex items-center gap-1 ${tone.text}`}>
                   <span>●</span> Break-even {formatCurrency(breakevenPrice, 2)}
                 </div>
                 <div className="flex items-center gap-1 text-[#002B45]">
@@ -367,17 +376,22 @@ export default function PositionCard({ position, onEdit }: Props) {
               </div>
             </div>
 
-            {sigmaCtx && (
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Risk calibrated using{' '}
-                <span className="text-slate-500">
-                  {annualizedVol}% annualized vol
-                  {volIsOverride ? ' (your override)' : ` (${position.ticker} estimate)`}
-                </span>
-                {' '}· for {daysUntilLongTerm} days, 1σ = ±{sigmaCtx.sigmaPct.toFixed(1)}%.
-                High &lt;{sigmaCtx.highThreshold.toFixed(1)}%, Low &gt;{sigmaCtx.lowThreshold.toFixed(1)}% cushion.
-              </p>
-            )}
+            <div className="grid grid-cols-3 gap-3">
+              <MiniStat label="Chance waiting loses" value={formatProb(probBelowBreakeven)} />
+              <MiniStat label="Expected gain from waiting" value={formatCurrency(expectedGainFromWaiting)} />
+              <MiniStat label="Expected shortfall" value={formatCurrency(expectedShortfall)} />
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Modeled as a random walk with no expected return (no market forecast) using{' '}
+              <span className="text-slate-500">
+                {annualizedVol}% annualized volatility
+                {volIsOverride ? ' (your override)' : ` (${position.ticker} estimate)`}
+              </span>
+              {' '}over {daysUntilLongTerm} days. Under that model waiting always wins on average; the risk is the
+              spread. Only bear it if you would hold this stock anyway — if you would otherwise diversify, the
+              expected shortfall is the price of staying concentrated. Rating: expected upside ÷ expected downside
+              of waiting — high risk below 1.25×, low risk at 2× or more.
+            </p>
 
             <button
               onClick={() => setShowChart(v => !v)}
@@ -400,8 +414,25 @@ export default function PositionCard({ position, onEdit }: Props) {
           breakevenPrice={breakevenPrice}
           costBasis={position.costBasisPerShare}
           daysUntilLongTerm={daysUntilLongTerm}
+          probBelowBreakeven={probBelowBreakeven}
+          expectedShortfall={expectedShortfall}
+          isShortTermLoss={isLoss && !isLongTerm}
+          upsideDownsideRatio={analysis.upsideDownsideRatio}
         />
       </div>
+    </div>
+  )
+}
+
+function formatRatio(r: number) {
+  return Number.isFinite(r) ? `$${r.toFixed(2)}` : 'far more'
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
+      <div className="text-xs text-slate-500 mb-0.5">{label}</div>
+      <div className="font-mono text-slate-900 font-semibold text-sm">{value}</div>
     </div>
   )
 }
