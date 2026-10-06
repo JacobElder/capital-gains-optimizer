@@ -51,7 +51,7 @@ function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array
         {d.prob != null && (
           <div className="flex justify-between gap-4 pt-1 border-t border-slate-100 mt-1">
             <span className="text-slate-400">P(waiting wins)</span>
-            <span className={`font-mono font-semibold ${d.prob >= 0.85 ? 'text-green-700' : d.prob >= 0.7 ? 'text-amber-600' : 'text-red-600'}`}>
+            <span className="font-mono font-semibold text-slate-900">
               {(d.prob * 100).toFixed(0)}%
             </span>
           </div>
@@ -81,7 +81,7 @@ interface Props {
 export default function PortfolioDashboard({ analyses }: Props) {
   const {
     totalValue, totalGain, totalSavings,
-    byRisk, weightedProbability, expectedShortfall, scatterData,
+    byRisk, weightedProbability, expectedShortfall, scatterData, longTermCount,
     totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting,
   } = useMemo(() => {
     const totalValue = analyses.reduce((s, a) => s + a.currentValue, 0)
@@ -102,8 +102,10 @@ export default function PortfolioDashboard({ analyses }: Props) {
     const weightedProbability = totalSavings > 0 ? weightedNum / totalSavings : null
     const expectedShortfall = actionable.reduce((s, a) => s + a.expectedShortfall, 0)
 
-    const scatterData: ScatterPoint[] = analyses.map(a => ({
-      x: a.isLongTerm ? 0 : a.daysUntilLongTerm,
+    // Long-term lots have no decision left (and would all pile up at day 0)
+    const longTermCount = analyses.filter(a => a.isLongTerm).length
+    const scatterData: ScatterPoint[] = analyses.filter(a => !a.isLongTerm).map(a => ({
+      x: a.daysUntilLongTerm,
       y: Math.max(0, a.taxSavingsFromWaiting),
       z: Math.max(a.currentValue, 500),
       ticker: a.position.ticker,
@@ -130,7 +132,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
       high: offset * maxRate(a => a.stcgCombinedRate),
     }
 
-    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, expectedShortfall, scatterData, totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting }
+    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, expectedShortfall, scatterData, longTermCount, totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting }
   }, [analyses])
 
   const n = analyses.length
@@ -156,10 +158,9 @@ export default function PortfolioDashboard({ analyses }: Props) {
           <div className="text-xs text-slate-400 mb-1 font-medium">Chance of Capturing Savings</div>
           {weightedProbability != null ? (
             <div>
-              <div className={`font-mono font-bold text-xl ${
-                weightedProbability >= 0.85 ? 'text-green-700' :
-                weightedProbability >= 0.65 ? 'text-amber-600' : 'text-red-600'
-              }`}>
+              {/* Neutral on purpose: a 50–60% chance is normal and still worth it on average;
+                  the risk rating, not this number, says whether waiting is a good bet */}
+              <div className="font-mono font-bold text-xl text-slate-900">
                 {(weightedProbability * 100).toFixed(0)}%
               </div>
               <div className="text-xs text-slate-400 mt-0.5">savings-weighted chance each lot ends above break-even</div>
@@ -209,11 +210,12 @@ export default function PortfolioDashboard({ analyses }: Props) {
           <div>
             <div className="text-xs font-semibold text-slate-700">Portfolio Tax Map</div>
             <div className="text-xs text-slate-400 mt-0.5">
-              X = days until LTCG · Y = tax savings · size = position value · hover for details
+              Short-term lots · X = days until LTCG · Y = tax savings · size = position value · hover for details
+              {longTermCount > 0 && ` · ${longTermCount} long-term lot${longTermCount !== 1 ? 's' : ''} not shown`}
             </div>
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400 justify-end">
-            {[['#ef4444', 'High'], ['#f59e0b', 'Moderate'], ['#22c55e', 'Low'], ['#3b82f6', 'LTCG'], ['#94a3b8', 'Loss']].map(([c, l]) => (
+            {[['#ef4444', 'High'], ['#f59e0b', 'Moderate'], ['#22c55e', 'Low'], ['#94a3b8', 'Loss']].map(([c, l]) => (
               <span key={l} className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: c }} />
                 {l}
@@ -229,6 +231,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
               type="number"
               name="Days until LTCG"
               domain={[0, 366]}
+              padding={{ left: 16, right: 16 }}
               ticks={[0, 60, 120, 180, 240, 300, 366]}
               tick={{ fill: '#94a3b8', fontSize: 9 }}
               axisLine={{ stroke: '#e2e8f0' }}
