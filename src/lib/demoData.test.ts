@@ -57,18 +57,30 @@ describe('anonymizePortfolio', () => {
 })
 
 describe('generateSamplePortfolio', () => {
-  it('produces a varied, analyzable portfolio', () => {
-    for (const seed of [11, 22, 33]) {
+  it('is one monthly GOOG grant with front-loaded, declining vests', () => {
+    for (const seed of [11, 22, 33, 44]) {
       const sample = generateSamplePortfolio(seed, settings, today)
       const analyses = sample.positions.map(p => analyzePosition(p, sample.settings, today))
-      expect(sample.positions.length).toBeGreaterThanOrEqual(12)
-      expect(analyses.some(a => !a.isLongTerm)).toBe(true)
+      expect(new Set([...sample.positions, ...sample.futureVests].map(x => x.ticker))).toEqual(new Set(['GOOG']))
+      expect(sample.positions.length).toBeGreaterThanOrEqual(14)
+      expect(sample.positions.length + sample.futureVests.length).toBe(48)
       expect(analyses.some(a => a.isLongTerm)).toBe(true)
-      expect(sample.futureVests.length).toBeGreaterThan(0)
-      for (const p of sample.positions) {
-        expect(p.costBasisPerShare).toBeGreaterThan(0)
-        expect(p.purchaseDate <= '2026-10-06').toBe(true)
+      expect(analyses.some(a => !a.isLongTerm)).toBe(true)
+      for (const x of [...sample.positions.map(p => p.purchaseDate), ...sample.futureVests.map(v => v.vestDate)]) {
+        expect(x.endsWith('-25')).toBe(true)
       }
+      expect(sample.positions.every(p => p.purchaseDate <= '2026-10-06')).toBe(true)
+      expect(sample.futureVests.every(v => v.vestDate > '2026-10-06')).toBe(true)
+      // Vest sizes never increase over the life of the grant
+      const gross = sample.futureVests.map(v => v.sharesGross)
+      for (let i = 1; i < gross.length; i++) expect(gross[i]).toBeLessThanOrEqual(gross[i - 1])
+      const lots = sample.positions.map(p => p.shares)
+      expect(lots[0]).toBeGreaterThanOrEqual(lots[lots.length - 1])
     }
+  })
+
+  it('uses the real GOOG price when the user holds GOOG', () => {
+    const sample = generateSamplePortfolio(1, settings, today, [lot('x', 'GOOG', '2026-01-01', 1, 100, 412.34)])
+    expect(sample.positions[0].currentPrice).toBe(412.34)
   })
 })

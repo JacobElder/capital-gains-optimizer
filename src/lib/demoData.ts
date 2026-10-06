@@ -199,94 +199,98 @@ export function anonymizePortfolio(
   return { positions, futureVests, settings }
 }
 
-// ── Sample: fully synthetic but realistic portfolio ───────────────────────────
+// ── Sample: one front-loaded GOOG RSU grant ───────────────────────────────────
+
+// Share of the grant vesting in each year of a front-loaded 4-year schedule
+// (declines every year, like the 38/32/20/10 split Google has used)
+const FRONT_LOADED_SCHEDULE = [0.38, 0.32, 0.20, 0.10]
+const VEST_DAY = 25           // Alphabet RSUs vest on the 25th of the month
+const RETAINED_AFTER_TAX = 0.62 // shares left after sell-to-cover withholding
+const SAMPLE_TICKER = 'GOOG'
+const SAMPLE_NAME = 'Alphabet Inc. Class C'
+const FALLBACK_PRICE = 300
 
 /**
- * Builds an invented portfolio: an "employer" stock with quarterly RSU vests
- * plus several brokerage holdings. Cost bases come from simulating each
- * stock's price backwards with its volatility, so gains and losses look like
- * real market outcomes rather than uniform noise.
+ * Builds an invented employee's GOOG holdings: one RSU grant vesting monthly
+ * on a front-loaded schedule (38/32/20/10% by year), with the net shares from
+ * each past vest held as a separate lot and the remaining vests listed as
+ * future vests. Cost bases come from a single simulated monthly price path,
+ * so consecutive lots move together like a real stock. The current price is
+ * taken from the user's own GOOG/GOOGL lot when there is one (a public market
+ * price), otherwise a fixed placeholder.
  */
 export function generateSamplePortfolio(
-  seed: number, baseSettings: UserSettings, today: Date = new Date(),
+  seed: number, baseSettings: UserSettings, today: Date = new Date(), realPositions: Position[] = [],
 ): ViewData {
   const rng = new Rng(seed)
-  const companies = rng.shuffle(FICTIONAL).slice(0, rng.int(5, 7))
-  const [employer, ...others] = companies
-  const positions: Position[] = []
   const nowIso = new Date().toISOString()
-  const prices = new Map<string, number>()
+  const vol = effectiveVol({ ticker: SAMPLE_TICKER }).vol / 100
 
-  // Price `days` ago, simulated backwards from today's price with the stock's
-  // own vol. The drift is generous (25%/yr) and the noise is damped so most lots
-  // show gains, which is what makes the sell-vs-wait analysis interesting.
-  const historicalPrice = (current: number, vol: number, days: number) => {
-    const t = days / 365
-    const s = 0.7 * (vol / 100) * Math.sqrt(t)
-    return current / Math.exp(0.25 * t + s * rng.normal())
+  const realPrice = realPositions.find(p => p.ticker === 'GOOG' || p.ticker === 'GOOGL')?.currentPrice
+  const currentPrice = round2(realPrice ?? FALLBACK_PRICE)
+
+  // Grant sized so year one vests roughly $60K–$200K at today's price
+  const grantShares = Math.round(rng.logUniform(60_000, 200_000) / FRONT_LOADED_SCHEDULE[0] / currentPrice)
+  // Grant started 14–30 months ago: some lots long-term, some still short-term
+  const monthsElapsed = rng.int(14, 30)
+  const thisMonthsVest = new Date(today.getFullYear(), today.getMonth(), VEST_DAY)
+  const lastVestOffset = thisMonthsVest <= today ? 0 : 1 // months back to the most recent vest
+
+  // Monthly price path walking backwards from today (≈20%/yr drift)
+  const pricesBack: number[] = [currentPrice]
+  const monthlySigma = vol / Math.sqrt(12)
+  for (let m = 1; m <= monthsElapsed + 1; m++) {
+    pricesBack.push(pricesBack[m - 1] / Math.exp(0.2 / 12 - 0.5 * monthlySigma ** 2 + monthlySigma * rng.normal()))
   }
 
-  const addLot = (c: typeof employer, daysAgo: number, shares: number) => {
-    const price = prices.get(c.ticker)!
+  const vestDateFor = (monthsAgo: number) =>
+    new Date(today.getFullYear(), today.getMonth() - monthsAgo, VEST_DAY)
+  const grossForVest = (vestNumber: number) => { // vestNumber 1..48
+    const year = Math.min(3, Math.floor((vestNumber - 1) / 12))
+    return Math.max(1, Math.round((grantShares * FRONT_LOADED_SCHEDULE[year]) / 12))
+  }
+
+  // Past vests: vest #1 happened (monthsElapsed - 1) months before the latest one
+  const positions: Position[] = []
+  const firstVestMonthsAgo = lastVestOffset + monthsElapsed - 1
+  for (let n = 1; n <= monthsElapsed; n++) {
+    const monthsAgo = firstVestMonthsAgo - (n - 1)
+    const fmv = pricesBack[Math.min(pricesBack.length - 1, monthsAgo)] * Math.exp(0.02 * rng.normal())
     positions.push({
-      id: `sample-${positions.length}`,
-      ticker: c.ticker,
-      name: c.name,
-      shares,
-      costBasisPerShare: round2(historicalPrice(price, c.vol, daysAgo)),
-      purchaseDate: iso(addDays(today, -daysAgo)),
-      currentPrice: price,
-      volatilityOverride: c.vol,
+      id: `sample-${n}`,
+      ticker: SAMPLE_TICKER,
+      name: SAMPLE_NAME,
+      shares: Math.max(1, Math.floor(grossForVest(n) * RETAINED_AFTER_TAX)),
+      costBasisPerShare: round2(fmv),
+      purchaseDate: iso(vestDateFor(monthsAgo)),
+      currentPrice,
       createdAt: nowIso,
       updatedAt: nowIso,
     })
   }
 
-  for (const c of companies) prices.set(c.ticker, round2(rng.logUniform(25, 450)))
-
-  // Employer RSUs: net shares from quarterly vests over the last ~2 years
-  const employerPrice = prices.get(employer.ticker)!
-  const vestShares = Math.max(4, Math.round(rng.logUniform(8_000, 40_000) / employerPrice))
-  const firstOffset = rng.int(10, 80)
-  for (let q = 0; q < 8; q++) {
-    addLot(employer, firstOffset + q * 91, Math.max(1, Math.round(vestShares * 0.54 * rng.uniform(0.9, 1.1))))
-  }
-
-  // Brokerage holdings: 1–2 lots each, half of them inside the short-term window
-  for (const c of others) {
-    const lots = rng.int(1, 2)
-    for (let l = 0; l < lots; l++) {
-      const daysAgo = rng.uniform() < 0.55 ? rng.int(15, 360) : rng.int(370, 900)
-      const value = rng.logUniform(4_000, 60_000)
-      addLot(c, daysAgo, Math.max(1, Math.round(value / prices.get(c.ticker)!)))
-    }
-  }
-
-  const futureVests: FutureVestLot[] = []
+  // Future vests: the rest of the 48-month schedule
   const awardId = String(rng.int(1_000_000, 9_999_999))
-  const awardDate = iso(addDays(today, -firstOffset - 7 * 91 - 30))
-  for (let q = 1; q <= 8; q++) {
+  const awardDate = iso(addDays(vestDateFor(firstVestMonthsAgo + 1), -rng.int(5, 20)))
+  const futureVests: FutureVestLot[] = []
+  for (let n = monthsElapsed + 1; n <= 48; n++) {
     futureVests.push({
-      id: `sample-vest-${q}`,
-      ticker: employer.ticker,
-      name: employer.name,
+      id: `sample-vest-${n}`,
+      ticker: SAMPLE_TICKER,
+      name: SAMPLE_NAME,
       awardId,
       awardDate,
-      vestDate: iso(addDays(today, 91 * q - firstOffset)),
-      sharesGross: vestShares,
+      vestDate: iso(vestDateFor(firstVestMonthsAgo - (n - 1))),
+      sharesGross: grossForVest(n),
     })
   }
 
   const settings: UserSettings = {
     ...baseSettings,
-    annualTaxableIncome: roundIncome(rng.logUniform(110_000, 420_000)),
+    annualTaxableIncome: roundIncome(rng.logUniform(180_000, 420_000)),
   }
 
-  return {
-    positions,
-    futureVests: futureVests.filter(v => v.vestDate > iso(today)),
-    settings,
-  }
+  return { positions, futureVests, settings }
 }
 
 function round2(n: number) {

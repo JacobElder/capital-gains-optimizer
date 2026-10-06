@@ -21,7 +21,7 @@ export function useViewData(): ViewData & { isDemo: boolean } {
       case 'anonymize':
         return { ...anonymizePortfolio(real, privacy.seed, privacy.maskTickers), isDemo: true }
       case 'sample':
-        return { ...generateSamplePortfolio(privacy.seed, settings), isDemo: true }
+        return { ...generateSamplePortfolio(privacy.seed, settings, new Date(), positions), isDemo: true }
       default:
         return { ...real, isDemo: false }
     }

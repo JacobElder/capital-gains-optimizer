@@ -39,7 +39,9 @@ Use the selector in the header:
 - **Anonymized** keeps your portfolio's shape (number of lots, which are short- or long-term, gain/loss pattern,
   relative volatility) but rescales share counts, perturbs prices, dates and income, and swaps tickers for
   invented companies with similar volatility.
-- **Sample portfolio** is an invented portfolio: employer RSUs with quarterly vests plus several brokerage holdings.
+- **Sample portfolio** is an invented employee's GOOG holdings: one RSU grant vesting monthly on the 25th with a
+  front-loaded 38/32/20/10% schedule. Each past vest is a lot (net of sell-to-cover withholding) and the rest appear
+  under Future Vests. If you hold GOOG, its current price is reused; otherwise a placeholder price is used.
 
 **↻ Reshuffle** generates a new random version. Demo mode is read-only and never modifies your saved data.
 Opening the app with `?demo` in the URL starts in the sample portfolio, which is useful for shared links.
