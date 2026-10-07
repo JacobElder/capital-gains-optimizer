@@ -209,6 +209,7 @@ const RETAINED_AFTER_TAX = 0.62 // shares left after sell-to-cover withholding
 const SAMPLE_TICKER = 'GOOG'
 const SAMPLE_NAME = 'Alphabet Inc. Class C'
 const FALLBACK_PRICE = 300
+const MAX_PAST_PRICE_RATIO = 0.95 // every past vest at least 5% below today
 
 /**
  * Builds an invented employee's GOOG holdings: one RSU grant vesting monthly
@@ -242,6 +243,10 @@ export function generateSamplePortfolio(
   for (let m = 1; m <= monthsElapsed + 1; m++) {
     pricesBack.push(pricesBack[m - 1] / Math.exp(0.2 / 12 - 0.5 * monthlySigma ** 2 + monthlySigma * rng.normal()))
   }
+  // Tilt the path just enough that every past month sits at least 5% below
+  // today, so every lot shows a gain while keeping the path's ups and downs.
+  const tilt = Math.max(0, ...pricesBack.slice(1).map((p, i) => Math.log(p / (MAX_PAST_PRICE_RATIO * currentPrice)) / (i + 1)))
+  for (let m = 1; m < pricesBack.length; m++) pricesBack[m] *= Math.exp(-tilt * m)
 
   const vestDateFor = (monthsAgo: number) =>
     new Date(today.getFullYear(), today.getMonth() - monthsAgo, VEST_DAY)
@@ -255,7 +260,7 @@ export function generateSamplePortfolio(
   const firstVestMonthsAgo = lastVestOffset + monthsElapsed - 1
   for (let n = 1; n <= monthsElapsed; n++) {
     const monthsAgo = firstVestMonthsAgo - (n - 1)
-    const fmv = pricesBack[Math.min(pricesBack.length - 1, monthsAgo)] * Math.exp(0.02 * rng.normal())
+    const fmv = pricesBack[Math.min(pricesBack.length - 1, monthsAgo)]
     positions.push({
       id: `sample-${n}`,
       ticker: SAMPLE_TICKER,

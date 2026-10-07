@@ -19,7 +19,8 @@ For each lot the app compares two choices:
 
 Taxes are computed by stacking the gain on top of the taxable income you enter, so a large gain that crosses
 brackets (or the NIIT threshold) is taxed correctly rather than at a single marginal rate. Federal brackets are
-for 2026 (Rev. Proc. 2025-32). State rates are 2025 figures; flat-rate entries use the state's top rate.
+for 2026 (Rev. Proc. 2025-32). State rates are 2026 figures, including Maryland's and Massachusetts' surtaxes; graduated
+states without bracket tables use their top rate.
 
 - **Break-even price:** the price on the long-term date at which both choices net the same after tax.
 - **Chance waiting loses:** P(price on the long-term date < break-even). The price is modeled as a driftless
@@ -41,7 +42,7 @@ Use the selector in the header:
   invented companies with similar volatility.
 - **Sample portfolio** is an invented employee's GOOG holdings: one RSU grant vesting monthly on the 25th with a
   front-loaded 38/32/20/10% schedule. Each past vest is a lot (net of sell-to-cover withholding) and the rest appear
-  under Future Vests. If you hold GOOG, its current price is reused; otherwise a placeholder price is used.
+  under Future Vests. Every lot shows a gain. If you hold GOOG, its current price is reused; otherwise a placeholder price is used.
 
 **↻ Reshuffle** generates a new random version. Demo mode is read-only and never modifies your saved data.
 Opening the app with `?demo` in the URL starts in the sample portfolio, which is useful for shared links.

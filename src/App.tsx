@@ -52,7 +52,7 @@ export default function App() {
         {tab === 'positions' ? <PositionList /> : <FutureVestingView />}
       </main>
       <footer className="max-w-4xl mx-auto px-4 py-6 text-center text-xs text-slate-400 border-t border-slate-200 mt-6">
-        Federal brackets reflect {TAX_YEAR} IRS figures; state rates are 2025 figures and flat-rate states use their top
+        Federal brackets and state rates reflect {TAX_YEAR}; graduated states without bracket tables use their top
         rate. Each lot is analyzed on its own, on top of the income you enter. This tool is for planning purposes only
         and does not constitute tax advice. Consult a qualified CPA or tax attorney before making investment decisions.
       </footer>

@@ -67,6 +67,22 @@ describe('Washington', () => {
   })
 })
 
+describe('2026 state rules', () => {
+  it('does not tax capital gains in Missouri', () => {
+    expect(stateTaxOnGain('MO', 150_000, 50_000, 'single', false)).toBe(0)
+  })
+  it('adds Maryland\'s 2% capital gains surtax above $350K', () => {
+    const below = stateTaxOnGain('MD', 200_000, 100_000, 'single', true)
+    const above = stateTaxOnGain('MD', 300_000, 100_000, 'single', true)
+    expect(below).toBeCloseTo(50_000 * 0.055 + 50_000 * 0.0575, 6)
+    expect(above).toBeCloseTo(100_000 * 0.0575 + 0.02 * 100_000, 6)
+  })
+  it('adds the Massachusetts 4% surtax only above the threshold', () => {
+    expect(stateTaxOnGain('MA', 100_000, 50_000, 'single', true)).toBeCloseTo(2_500, 6)
+    expect(stateTaxOnGain('MA', 1_050_000, 100_000, 'single', true)).toBeCloseTo(5_000 + 0.04 * 66_850, 6)
+  })
+})
+
 describe('break-even', () => {
   const today = d('2026-01-01')
 

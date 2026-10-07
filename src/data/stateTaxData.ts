@@ -1,7 +1,8 @@
 import type { StateTaxInfo, FilingStatus } from '../types'
 import { taxOnSlice } from './federalTaxBrackets'
 
-// State capital gains tax data (2025 rates; verify flat rates against your state for 2026).
+// State capital gains tax data, 2026 rates (Tax Foundation, Jan 2026). CA, MN, NJ
+// and NY bracket thresholds are 2025 figures (small annual inflation changes).
 // Flat-rate entries use the TOP marginal rate, which overstates tax for lower
 // incomes in graduated states. Bracketed states are integrated in stateTaxOnGain.
 export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
@@ -87,9 +88,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   GA: {
     code: 'GA', name: 'Georgia',
-    stcgRate: 0.0549, ltcgRate: 0.0549,
+    stcgRate: 0.0519, ltcgRate: 0.0519,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '5.49% flat rate (2024); further reductions planned',
+    notes: '5.19% flat rate (2026)',
   },
   HI: {
     code: 'HI', name: 'Hawaii',
@@ -99,9 +100,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   ID: {
     code: 'ID', name: 'Idaho',
-    stcgRate: 0.058, ltcgRate: 0.058,
+    stcgRate: 0.053, ltcgRate: 0.053,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '5.8% flat rate',
+    notes: '5.3% flat rate',
   },
   IL: {
     code: 'IL', name: 'Illinois',
@@ -111,9 +112,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   IN: {
     code: 'IN', name: 'Indiana',
-    stcgRate: 0.0305, ltcgRate: 0.0305,
+    stcgRate: 0.0295, ltcgRate: 0.0295,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '3.05% flat rate (2024)',
+    notes: '2.95% flat rate (2026). Counties add ~1–3% local tax (not included).',
   },
   IA: {
     code: 'IA', name: 'Iowa',
@@ -123,15 +124,15 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   KS: {
     code: 'KS', name: 'Kansas',
-    stcgRate: 0.057, ltcgRate: 0.057,
+    stcgRate: 0.0558, ltcgRate: 0.0558,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 5.7% on income over $30K (single)',
+    notes: 'Top rate 5.58% (single income over $23K)',
   },
   KY: {
     code: 'KY', name: 'Kentucky',
-    stcgRate: 0.04, ltcgRate: 0.04,
+    stcgRate: 0.035, ltcgRate: 0.035,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '4.0% flat rate (reduced from 4.5%)',
+    notes: '3.5% flat rate (2026)',
   },
   LA: {
     code: 'LA', name: 'Louisiana',
@@ -147,15 +148,41 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   MD: {
     code: 'MD', name: 'Maryland',
-    stcgRate: 0.0575, ltcgRate: 0.0575,
-    treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'State rate 5.75%. Local/county tax adds ~2–3% (not included here).',
+    stcgRate: 0.065, ltcgRate: 0.065,
+    treatsCGAsOrdinaryIncome: true, hasBrackets: true,
+    brackets: {
+      single: [
+        { upTo: 1000, rate: 0.02 },
+        { upTo: 2000, rate: 0.03 },
+        { upTo: 3000, rate: 0.04 },
+        { upTo: 100000, rate: 0.0475 },
+        { upTo: 125000, rate: 0.05 },
+        { upTo: 150000, rate: 0.0525 },
+        { upTo: 250000, rate: 0.055 },
+        { upTo: 500000, rate: 0.0575 },
+        { upTo: 1000000, rate: 0.0625 },
+        { upTo: Infinity, rate: 0.065 },
+      ],
+      mfj: [
+        { upTo: 1000, rate: 0.02 },
+        { upTo: 2000, rate: 0.03 },
+        { upTo: 3000, rate: 0.04 },
+        { upTo: 150000, rate: 0.0475 },
+        { upTo: 175000, rate: 0.05 },
+        { upTo: 225000, rate: 0.0525 },
+        { upTo: 300000, rate: 0.055 },
+        { upTo: 600000, rate: 0.0575 },
+        { upTo: 1200000, rate: 0.0625 },
+        { upTo: Infinity, rate: 0.065 },
+      ],
+    },
+    notes: 'Brackets up to 6.5%, plus a 2% surtax on capital gains when income exceeds $350K (included). County tax of ~2.25–3.3% is not included.',
   },
   MA: {
     code: 'MA', name: 'Massachusetts',
     stcgRate: 0.085, ltcgRate: 0.05,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: 'MA taxes STCG at 8.5% and LTCG at 5.0% — lower state rate for waiting.',
+    notes: 'STCG taxed at 8.5%, LTCG at 5.0%. A 4% surtax applies to income over ~$1.08M (included).',
   },
   MI: {
     code: 'MI', name: 'Michigan',
@@ -185,27 +212,27 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   MS: {
     code: 'MS', name: 'Mississippi',
-    stcgRate: 0.047, ltcgRate: 0.047,
+    stcgRate: 0.04, ltcgRate: 0.04,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '4.7% flat rate (reducing to 4.4% by 2026)',
+    notes: '4.0% flat rate (2026)',
   },
   MO: {
     code: 'MO', name: 'Missouri',
-    stcgRate: 0.047, ltcgRate: 0.047,
-    treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 4.7% (effectively flat for most earners)',
+    stcgRate: 0, ltcgRate: 0,
+    treatsCGAsOrdinaryIncome: false, hasBrackets: false,
+    notes: 'Missouri stopped taxing individuals\' capital gains (short- and long-term) starting tax year 2025.',
   },
   MT: {
     code: 'MT', name: 'Montana',
-    stcgRate: 0.059, ltcgRate: 0.041,
+    stcgRate: 0.0565, ltcgRate: 0.041,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: 'Top ordinary rate 5.9%. Since 2024 LTCG has its own schedule: 3.0% / 4.1% (top rate used).',
+    notes: 'Top ordinary rate 5.65% (2026). LTCG has its own schedule: 3.0% / 4.1% (top rate used).',
   },
   NE: {
     code: 'NE', name: 'Nebraska',
-    stcgRate: 0.0584, ltcgRate: 0.0584,
+    stcgRate: 0.0455, ltcgRate: 0.0455,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 5.84% (reducing to 3.99% by 2027)',
+    notes: 'Top rate 4.55% (2026), falling to 3.99% by 2027',
   },
   NV: {
     code: 'NV', name: 'Nevada',
@@ -284,9 +311,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   NC: {
     code: 'NC', name: 'North Carolina',
-    stcgRate: 0.0425, ltcgRate: 0.0425,
+    stcgRate: 0.0399, ltcgRate: 0.0399,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '4.25% flat rate (2025)',
+    notes: '3.99% flat rate (2026)',
   },
   ND: {
     code: 'ND', name: 'North Dakota',
@@ -296,15 +323,15 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   OH: {
     code: 'OH', name: 'Ohio',
-    stcgRate: 0.035, ltcgRate: 0.035,
+    stcgRate: 0.0275, ltcgRate: 0.0275,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 3.5% on income over $100K',
+    notes: '2.75% flat rate on income over $26,050 (2026)',
   },
   OK: {
     code: 'OK', name: 'Oklahoma',
-    stcgRate: 0.0475, ltcgRate: 0.0475,
+    stcgRate: 0.045, ltcgRate: 0.045,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 4.75%',
+    notes: 'Top rate 4.5% (2026)',
   },
   OR: {
     code: 'OR', name: 'Oregon',
@@ -326,9 +353,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   SC: {
     code: 'SC', name: 'South Carolina',
-    stcgRate: 0.062, ltcgRate: 0.03472,
+    stcgRate: 0.06, ltcgRate: 0.0336,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: 'STCG at 6.2%. LTCG benefits from 44% exclusion → effective 3.47%.',
+    notes: 'Top rate 6.0%. LTCG benefits from a 44% exclusion → effective 3.36%.',
   },
   SD: {
     code: 'SD', name: 'South Dakota',
@@ -350,9 +377,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   UT: {
     code: 'UT', name: 'Utah',
-    stcgRate: 0.0455, ltcgRate: 0.0455,
+    stcgRate: 0.045, ltcgRate: 0.045,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '4.55% flat rate',
+    notes: '4.5% flat rate',
   },
   VT: {
     code: 'VT', name: 'Vermont',
@@ -374,9 +401,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   WV: {
     code: 'WV', name: 'West Virginia',
-    stcgRate: 0.0512, ltcgRate: 0.0512,
+    stcgRate: 0.0482, ltcgRate: 0.0482,
     treatsCGAsOrdinaryIncome: true, hasBrackets: false,
-    notes: 'Top rate 5.12%',
+    notes: 'Top rate 4.82%',
   },
   WI: {
     code: 'WI', name: 'Wisconsin',
@@ -444,8 +471,21 @@ export function stateTaxOnGain(
     return 0.07 * Math.min(taxable, WA_SURTAX_THRESHOLD) + 0.099 * Math.max(0, taxable - WA_SURTAX_THRESHOLD)
   }
   const brackets = stateBrackets(state, status)
-  if (brackets) return taxOnSlice(income, income + gain, brackets)
-  return gain * (longTerm ? state.ltcgRate : state.stcgRate)
+  const base = brackets
+    ? taxOnSlice(income, income + gain, brackets)
+    : gain * (longTerm ? state.ltcgRate : state.stcgRate)
+  return base + stateSurtax(stateCode, income, gain)
+}
+
+// Maryland: 2% on all net capital gains once federal AGI exceeds $350K (2025+).
+// Massachusetts: 4% on taxable income above the millionaire threshold (2025 figure, indexed).
+const MD_CG_SURTAX_THRESHOLD = 350_000
+const MA_SURTAX_THRESHOLD = 1_083_150
+
+function stateSurtax(stateCode: string, income: number, gain: number): number {
+  if (stateCode === 'MD') return income + gain > MD_CG_SURTAX_THRESHOLD ? 0.02 * gain : 0
+  if (stateCode === 'MA') return 0.04 * Math.max(0, income + gain - Math.max(income, MA_SURTAX_THRESHOLD))
+  return 0
 }
 
 export const SORTED_STATES = Object.values(STATE_TAX_DATA).sort((a, b) =>

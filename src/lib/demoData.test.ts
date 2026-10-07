@@ -58,7 +58,7 @@ describe('anonymizePortfolio', () => {
 
 describe('generateSamplePortfolio', () => {
   it('is one monthly GOOG grant with front-loaded, declining vests', () => {
-    for (const seed of [11, 22, 33, 44]) {
+    for (const seed of [11, 22, 33, 44, 55, 66, 77, 88]) {
       const sample = generateSamplePortfolio(seed, settings, today)
       const analyses = sample.positions.map(p => analyzePosition(p, sample.settings, today))
       expect(new Set([...sample.positions, ...sample.futureVests].map(x => x.ticker))).toEqual(new Set(['GOOG']))
@@ -74,6 +74,7 @@ describe('generateSamplePortfolio', () => {
       // Vest sizes never increase over the life of the grant
       const gross = sample.futureVests.map(v => v.sharesGross)
       for (let i = 1; i < gross.length; i++) expect(gross[i]).toBeLessThanOrEqual(gross[i - 1])
+      expect(analyses.every(a => a.gainAmount > 0)).toBe(true)
       const lots = sample.positions.map(p => p.shares)
       expect(lots[0]).toBeGreaterThanOrEqual(lots[lots.length - 1])
     }
