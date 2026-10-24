@@ -108,10 +108,6 @@ export function taxOnSlice(from: number, to: number, brackets: Bracket[]): numbe
   return tax
 }
 
-export function marginalRate(income: number, brackets: Bracket[]): number {
-  return brackets.find(b => income <= b.upTo)?.rate ?? brackets[brackets.length - 1].rate
-}
-
 /** Extra federal income tax from adding a short-term gain on top of `income`. */
 export function federalSTCGTax(income: number, gain: number, status: FilingStatus): number {
   if (gain <= 0) return 0
@@ -134,19 +130,4 @@ export function niitTax(income: number, gain: number, status: FilingStatus): num
   if (gain <= 0) return 0
   const excess = Math.max(0, income + gain - NIIT_THRESHOLDS[status])
   return NIIT_RATE * Math.min(gain, excess)
-}
-
-export function getNIITApplies(income: number, status: FilingStatus): boolean {
-  return income > NIIT_THRESHOLDS[status]
-}
-
-/** Marginal rates on the next dollar of gain — used for display only. */
-export function getFederalSTCGRate(income: number, status: FilingStatus): number {
-  const base = marginalRate(income, ORDINARY[status])
-  return getNIITApplies(income, status) ? base + NIIT_RATE : base
-}
-
-export function getFederalLTCGRate(income: number, status: FilingStatus): number {
-  const base = marginalRate(income, LTCG[status])
-  return getNIITApplies(income, status) ? base + NIIT_RATE : base
 }

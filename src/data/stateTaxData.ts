@@ -1,8 +1,10 @@
 import type { StateTaxInfo, FilingStatus } from '../types'
 import { taxOnSlice } from './federalTaxBrackets'
 
-// State capital gains tax data, 2026 rates (Tax Foundation, Jan 2026). CA, MN, NJ
-// and NY bracket thresholds are 2025 figures (small annual inflation changes).
+// State capital gains tax data, 2026 rates (Tax Foundation, Jan 2026). Bracket
+// thresholds: MN 2026 (MN DOR), CA 2025 (latest FTB schedule; indexed yearly),
+// NY and NJ (not indexed). NY rates include the 2026 middle-class cut; GA
+// reflects HB 463 (4.99% for 2026).
 // Flat-rate entries use the TOP marginal rate, which overstates tax for lower
 // incomes in graduated states. Bracketed states are integrated in stateTaxOnGain.
 export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
@@ -36,27 +38,27 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
     treatsCGAsOrdinaryIncome: true, hasBrackets: true,
     brackets: {
       single: [
-        { upTo: 10756, rate: 0.01 },
-        { upTo: 25499, rate: 0.02 },
-        { upTo: 40245, rate: 0.04 },
-        { upTo: 55866, rate: 0.06 },
-        { upTo: 70606, rate: 0.08 },
-        { upTo: 360659, rate: 0.093 },
-        { upTo: 432787, rate: 0.103 },
-        { upTo: 721314, rate: 0.113 },
+        { upTo: 11079, rate: 0.01 },
+        { upTo: 26264, rate: 0.02 },
+        { upTo: 41452, rate: 0.04 },
+        { upTo: 57542, rate: 0.06 },
+        { upTo: 72724, rate: 0.08 },
+        { upTo: 371479, rate: 0.093 },
+        { upTo: 445771, rate: 0.103 },
+        { upTo: 742953, rate: 0.113 },
         { upTo: 1000000, rate: 0.123 },
         { upTo: Infinity, rate: 0.133 },
       ],
       mfj: [
-        { upTo: 21512, rate: 0.01 },
-        { upTo: 50998, rate: 0.02 },
-        { upTo: 80490, rate: 0.04 },
-        { upTo: 111732, rate: 0.06 },
-        { upTo: 141212, rate: 0.08 },
-        { upTo: 721318, rate: 0.093 },
-        { upTo: 865574, rate: 0.103 },
+        { upTo: 22158, rate: 0.01 },
+        { upTo: 52528, rate: 0.02 },
+        { upTo: 82904, rate: 0.04 },
+        { upTo: 115084, rate: 0.06 },
+        { upTo: 145448, rate: 0.08 },
+        { upTo: 742958, rate: 0.093 },
+        { upTo: 891542, rate: 0.103 },
         { upTo: 1000000, rate: 0.113 },
-        { upTo: 1442628, rate: 0.123 },
+        { upTo: 1485906, rate: 0.123 },
         { upTo: Infinity, rate: 0.133 },
       ],
     },
@@ -88,9 +90,9 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
   GA: {
     code: 'GA', name: 'Georgia',
-    stcgRate: 0.0519, ltcgRate: 0.0519,
+    stcgRate: 0.0499, ltcgRate: 0.0499,
     treatsCGAsOrdinaryIncome: false, hasBrackets: false,
-    notes: '5.19% flat rate (2026)',
+    notes: '4.99% flat rate (2026, HB 463)',
   },
   HI: {
     code: 'HI', name: 'Hawaii',
@@ -196,15 +198,15 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
     treatsCGAsOrdinaryIncome: true, hasBrackets: true,
     brackets: {
       single: [
-        { upTo: 31690, rate: 0.0535 },
-        { upTo: 104090, rate: 0.068 },
-        { upTo: 193240, rate: 0.0785 },
+        { upTo: 33310, rate: 0.0535 },
+        { upTo: 109430, rate: 0.068 },
+        { upTo: 203150, rate: 0.0785 },
         { upTo: Infinity, rate: 0.0985 },
       ],
       mfj: [
-        { upTo: 46330, rate: 0.0535 },
-        { upTo: 184040, rate: 0.068 },
-        { upTo: 321450, rate: 0.0785 },
+        { upTo: 48700, rate: 0.0535 },
+        { upTo: 193480, rate: 0.068 },
+        { upTo: 337930, rate: 0.0785 },
         { upTo: Infinity, rate: 0.0985 },
       ],
     },
@@ -285,22 +287,22 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
     treatsCGAsOrdinaryIncome: true, hasBrackets: true,
     brackets: {
       single: [
-        { upTo: 8500, rate: 0.04 },
-        { upTo: 11700, rate: 0.045 },
-        { upTo: 13900, rate: 0.0525 },
-        { upTo: 80650, rate: 0.0585 },
-        { upTo: 215400, rate: 0.0625 },
+        { upTo: 8500, rate: 0.039 },
+        { upTo: 11700, rate: 0.044 },
+        { upTo: 13900, rate: 0.0515 },
+        { upTo: 80650, rate: 0.054 },
+        { upTo: 215400, rate: 0.059 },
         { upTo: 1077550, rate: 0.0685 },
         { upTo: 5000000, rate: 0.0965 },
         { upTo: 25000000, rate: 0.103 },
         { upTo: Infinity, rate: 0.109 },
       ],
       mfj: [
-        { upTo: 17150, rate: 0.04 },
-        { upTo: 23600, rate: 0.045 },
-        { upTo: 27900, rate: 0.0525 },
-        { upTo: 161550, rate: 0.0585 },
-        { upTo: 323200, rate: 0.0625 },
+        { upTo: 17150, rate: 0.039 },
+        { upTo: 23600, rate: 0.044 },
+        { upTo: 27900, rate: 0.0515 },
+        { upTo: 161550, rate: 0.054 },
+        { upTo: 323200, rate: 0.059 },
         { upTo: 2155350, rate: 0.0685 },
         { upTo: 5000000, rate: 0.0965 },
         { upTo: 25000000, rate: 0.103 },
@@ -425,28 +427,8 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
   },
 }
 
-export function getStateSTCGRate(stateCode: string, income: number, status: FilingStatus): number {
-  const state = STATE_TAX_DATA[stateCode]
-  if (!state) return 0
-  if (!state.hasBrackets || !state.brackets) return state.stcgRate
-
-  const brackets = status === 'mfj' ? state.brackets.mfj : state.brackets.single
-  return brackets.find(b => income <= b.upTo)?.rate ?? state.stcgRate
-}
-
-export function getStateLTCGRate(stateCode: string, income: number, status: FilingStatus): number {
-  const state = STATE_TAX_DATA[stateCode]
-  if (!state) return 0
-  // For states with different STCG/LTCG rates (MA, WA, SC, WI, HI), ltcgRate is already set correctly
-  if (!state.hasBrackets || !state.brackets) return state.ltcgRate
-
-  // Bracketed states tax CG as ordinary income — same rate for both STCG and LTCG
-  const brackets = status === 'mfj' ? state.brackets.mfj : state.brackets.single
-  return brackets.find(b => income <= b.upTo)?.rate ?? state.ltcgRate
-}
-
 // Washington's capital gains excise tax (long-term gains only). The deduction is
-// per return and CPI-indexed (2025 figure). Assumes no other WA-taxable LTCG this year.
+// per return and CPI-indexed (2025 figure; the 2026 figure is not yet published). Assumes no other WA-taxable LTCG this year.
 const WA_DEDUCTION = 278_000
 const WA_SURTAX_THRESHOLD = 1_000_000
 

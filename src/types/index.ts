@@ -21,7 +21,8 @@ export interface Position {
   updatedAt: string
 }
 
-export type RiskLevel = 'high' | 'moderate' | 'low' | 'already-ltcg' | 'loss' | 'stcg-preferred'
+// 'invalid': the lot's numbers or date cannot be analyzed (see isAnalyzable)
+export type RiskLevel = 'high' | 'moderate' | 'low' | 'already-ltcg' | 'loss' | 'stcg-preferred' | 'invalid'
 
 export interface PositionAnalysis {
   position: Position
@@ -29,7 +30,7 @@ export interface PositionAnalysis {
   totalCostBasis: number
   currentValue: number
   gainAmount: number
-  gainPercent: number
+  gainPercent: number // +Infinity for a gain on a zero-cost lot
   isLoss: boolean
 
   daysHeld: number

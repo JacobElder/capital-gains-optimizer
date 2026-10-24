@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { PositionAnalysis } from '../../types'
+import type { RiskLevel } from '../../types'
 import { formatCurrency } from '../../lib/taxEngine'
+import { RISK_LEVELS, summarizeGroup } from '../../lib/portfolioSummary'
 import PositionCard from './PositionCard'
 
 interface Props {
@@ -10,38 +12,25 @@ interface Props {
   readOnly?: boolean
 }
 
+const RISK_BADGE_STYLES: Record<RiskLevel, string> = {
+  high: 'bg-red-50 border-red-200 text-red-700',
+  moderate: 'bg-amber-50 border-amber-200 text-amber-700',
+  low: 'bg-green-50 border-green-200 text-green-700',
+  loss: 'bg-slate-100 border-slate-300 text-slate-600',
+  'already-ltcg': 'bg-blue-50 border-blue-200 text-blue-700',
+  'stcg-preferred': 'bg-orange-50 border-orange-200 text-orange-700',
+  invalid: 'bg-slate-50 border-slate-300 text-slate-500',
+}
+const RISK_ICONS: Record<RiskLevel, string> = {
+  high: '▲', moderate: '●', low: '●', loss: '▼', 'already-ltcg': '✓', 'stcg-preferred': '!', invalid: '?',
+}
+
 export default function GroupedPositionCard({ ticker, analyses, onEdit, readOnly }: Props) {
   const [expanded, setExpanded] = useState(false)
 
-  const totalValue = analyses.reduce((s, a) => s + a.currentValue, 0)
-  const totalGain = analyses.reduce((s, a) => s + a.gainAmount, 0)
-  const totalSavings = analyses.filter(a => !a.isLoss && !a.isLongTerm).reduce((s, a) => s + a.taxSavingsFromWaiting, 0)
+  const { totalValue, totalGain, totalSavings, riskCounts, mostUrgent, dominantRisk } = summarizeGroup(analyses)
   const isLoss = totalGain < 0
   const companyName = analyses[0]?.position.name ?? ticker
-
-  const riskCounts: Record<string, number> = {}
-  for (const a of analyses) {
-    riskCounts[a.riskLevel] = (riskCounts[a.riskLevel] ?? 0) + 1
-  }
-
-  const actionable = analyses.filter(a => !a.isLongTerm && !a.isLoss)
-  const mostUrgent = actionable.length > 0
-    ? actionable.reduce((min, a) => a.daysUntilLongTerm < min.daysUntilLongTerm ? a : min)
-    : null
-
-  const RISK_BADGE_STYLES: Record<string, string> = {
-    high: 'bg-red-50 border-red-200 text-red-700',
-    moderate: 'bg-amber-50 border-amber-200 text-amber-700',
-    low: 'bg-green-50 border-green-200 text-green-700',
-    loss: 'bg-slate-100 border-slate-300 text-slate-600',
-    'already-ltcg': 'bg-blue-50 border-blue-200 text-blue-700',
-    'stcg-preferred': 'bg-orange-50 border-orange-200 text-orange-700',
-  }
-  const RISK_ICONS: Record<string, string> = {
-    high: '▲', moderate: '●', low: '●', loss: '▼', 'already-ltcg': '✓', 'stcg-preferred': '!',
-  }
-
-  const dominantRisk = Object.entries(riskCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'low'
 
   const borderAccent =
     dominantRisk === 'high' ? 'border-l-4 border-l-red-400' :
@@ -70,7 +59,7 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit, readOnly
             <div className="flex items-center gap-3 mt-1 flex-wrap">
               <span className="text-xs text-slate-500 font-mono">{formatCurrency(totalValue)}</span>
               <span className={`text-xs font-mono font-semibold ${isLoss ? 'text-red-600' : 'text-green-700'}`}>
-                {totalGain >= 0 ? '+' : ''}{formatCurrency(totalGain)} gain
+                {isLoss ? `${formatCurrency(Math.abs(totalGain))} loss` : `+${formatCurrency(totalGain)} gain`}
               </span>
               {totalSavings > 0 && (
                 <span className="text-xs text-[#1B6B3A] font-mono font-semibold">
@@ -83,12 +72,12 @@ export default function GroupedPositionCard({ ticker, analyses, onEdit, readOnly
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="hidden sm:flex items-center gap-1 flex-wrap justify-end max-w-[200px]">
-            {Object.entries(riskCounts).map(([risk, count]) => (
+            {RISK_LEVELS.filter(r => riskCounts[r] > 0).map(risk => (
               <span
                 key={risk}
-                className={`text-xs border rounded px-2 py-0.5 font-medium ${RISK_BADGE_STYLES[risk] ?? ''}`}
+                className={`text-xs border rounded px-2 py-0.5 font-medium ${RISK_BADGE_STYLES[risk]}`}
               >
-                {RISK_ICONS[risk]} {count}
+                {RISK_ICONS[risk]} {riskCounts[risk]}
               </span>
             ))}
           </div>

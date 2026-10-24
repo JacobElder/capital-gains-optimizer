@@ -85,3 +85,59 @@ describe('generateSamplePortfolio', () => {
     expect(sample.positions[0].currentPrice).toBe(412.34)
   })
 })
+
+describe('generateSamplePortfolio on every day of the year', () => {
+  it('keeps every lot in the green, dated in the past, with future vests after today', () => {
+    const start = new Date('2026-01-01T00:00:00')
+    for (let day = 0; day < 366; day++) {
+      for (const hour of [0, 12, 23]) {
+        const now = new Date(start.getFullYear(), start.getMonth(), start.getDate() + day, hour, 30)
+        const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        for (const seed of [3, 1234]) {
+          const sample = generateSamplePortfolio(seed, settings, now)
+          for (const p of sample.positions) {
+            // Gain > 0 ⇔ basis below the current price (this caught a $0 lot on the 25th–31st)
+            if (!(p.costBasisPerShare < p.currentPrice)) throw new Error(`${todayIso} seed ${seed}: ${p.purchaseDate} has no gain`)
+            if (p.purchaseDate > todayIso) throw new Error(`${todayIso}: lot dated ${p.purchaseDate}`)
+          }
+          for (const v of sample.futureVests) {
+            if (v.vestDate <= todayIso) throw new Error(`${todayIso}: vest ${v.vestDate} is not in the future`)
+          }
+        }
+      }
+    }
+  })
+
+  it('falls back to a placeholder price when the real GOOG price is unusable', () => {
+    for (const bad of [0, NaN, Infinity, 0.01, -5]) {
+      const sample = generateSamplePortfolio(1, settings, today, [lot('x', 'GOOG', '2026-01-01', 1, 100, bad)])
+      expect(sample.positions[0].currentPrice).toBe(300)
+      expect(sample.positions.every(p => Number.isFinite(p.shares) && p.shares < 10_000)).toBe(true)
+    }
+  })
+
+  it('is fully deterministic for a seed and date', () => {
+    expect(generateSamplePortfolio(5, settings, today)).toEqual(generateSamplePortfolio(5, settings, today))
+  })
+})
+
+describe('anonymizePortfolio privacy details', () => {
+  it('replaces data-entry timestamps and does not echo the exact volatility override', () => {
+    const withMeta = { ...real, positions: real.positions.map(p => ({ ...p, createdAt: '2025-03-04T05:06:07.000Z', updatedAt: '2025-03-04T05:06:07.000Z', volatilityOverride: 37 })) }
+    for (const seed of [1, 2, 3, 4, 5]) {
+      for (const p of anonymizePortfolio(withMeta, seed, true, today).positions) {
+        expect(p.createdAt).not.toContain('2025-03-04')
+        expect(p.updatedAt).not.toContain('2025-03-04')
+        expect(p.volatilityOverride).toBeGreaterThanOrEqual(33)
+        expect(p.volatilityOverride).toBeLessThanOrEqual(41)
+      }
+    }
+  })
+
+  it('maps more than 20 real tickers to overflow demo symbols', () => {
+    const many = { ...real, futureVests: [], positions: Array.from({ length: 22 }, (_, i) => lot(`l${i}`, `T${i}`, '2026-01-01', 1, 10, 12)) }
+    const tickers = anonymizePortfolio(many, 1, true, today).positions.map(p => p.ticker)
+    expect(new Set(tickers).size).toBe(22)
+    expect(tickers.filter(t => t.startsWith('DMO'))).toHaveLength(2)
+  })
+})

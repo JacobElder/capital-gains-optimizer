@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, parseISO, addDays, addYears, format } from 'date-fns'
+import { differenceInCalendarDays, parseISO, addDays, addYears, format, isValid } from 'date-fns'
 import type { Position, UserSettings, PositionAnalysis, RiskLevel } from '../types'
 import { federalSTCGTax, federalLTCGTax, niitTax, taxOnSlice } from '../data/federalTaxBrackets'
 import { stateTaxOnGain } from '../data/stateTaxData'
@@ -123,7 +123,7 @@ const Z_GRID = (() => {
   return pts.map(p => ({ z: p.z, w: p.w / total }))
 })()
 
-function getRiskLevel(
+export function getRiskLevel(
   upsideDownsideRatio: number,
   isLoss: boolean,
   isLongTerm: boolean,
@@ -137,14 +137,57 @@ function getRiskLevel(
   return 'low'
 }
 
+/**
+ * A lot can only be analyzed with finite, non-negative numbers, at least some
+ * shares, and a real purchase date that is not in the future.
+ */
+export function isAnalyzable(position: Position, today: Date = new Date()): boolean {
+  const { shares, costBasisPerShare, currentPrice, purchaseDate } = position
+  if (![shares, costBasisPerShare, currentPrice].every(Number.isFinite)) return false
+  if (shares <= 0 || costBasisPerShare < 0 || currentPrice < 0) return false
+  if (typeof purchaseDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate)) return false
+  const bought = parseISO(purchaseDate)
+  return isValid(bought) && differenceInCalendarDays(today, bought) >= 0
+}
+
+/** Neutral result for a lot whose data cannot be analyzed (see isAnalyzable). */
+function invalidAnalysis(position: Position): PositionAnalysis {
+  const { vol, isOverride } = effectiveVol(position)
+  return {
+    position,
+    totalCostBasis: 0, currentValue: 0, gainAmount: 0, gainPercent: 0, isLoss: false,
+    daysHeld: 0, isLongTerm: false, daysUntilLongTerm: 0,
+    longTermDate: typeof position.purchaseDate === 'string' ? position.purchaseDate : '',
+    holdingProgressPercent: 0,
+    federalSTCGRate: 0, federalLTCGRate: 0, stateSTCGRate: 0, stateLTCGRate: 0,
+    stcgCombinedRate: 0, ltcgCombinedRate: 0, niitApplies: false, nycRate: 0,
+    stcgPreferred: false,
+    taxIfSoldNowSTCG: 0, taxIfSoldAsLTCG: 0, taxSavingsFromWaiting: 0,
+    netProceedsNow: 0, breakevenPrice: 0, dropCushionPercent: 0,
+    probBelowBreakeven: 0, expectedGainFromWaiting: 0, expectedShortfall: 0,
+    upsideDownsideRatio: NaN,
+    riskLevel: 'invalid',
+    annualizedVol: vol,
+    volIsOverride: isOverride,
+  }
+}
+
+/** After-tax proceeds of selling the whole lot at `price` once it is long-term. */
+export function afterTaxIfHeld(price: number, shares: number, totalCostBasis: number, settings: UserSettings): number {
+  const value = price * shares
+  return value - taxOnGain(value - totalCostBasis, true, settings).total
+}
+
 export function analyzePosition(position: Position, settings: UserSettings, today: Date = new Date()): PositionAnalysis {
+  if (!isAnalyzable(position, today)) return invalidAnalysis(position)
   const { shares, costBasisPerShare, currentPrice, purchaseDate } = position
 
   // --- Cost basis & gain ---
   const totalCostBasis = shares * costBasisPerShare
   const currentValue = shares * currentPrice
   const gainAmount = currentValue - totalCostBasis
-  const gainPercent = totalCostBasis > 0 ? (gainAmount / totalCostBasis) * 100 : 0
+  // A zero-cost lot (e.g. a gifted share at $0 basis) is all gain: report it as +Infinity%
+  const gainPercent = totalCostBasis > 0 ? (gainAmount / totalCostBasis) * 100 : gainAmount > 0 ? Infinity : 0
   const isLoss = gainAmount < 0
 
   // --- Holding period ---
@@ -167,21 +210,18 @@ export function analyzePosition(position: Position, settings: UserSettings, toda
   const stcgPreferred = !isLoss && !isLongTerm && taxSavingsFromWaiting < 0
 
   const netProceedsNow = currentValue - taxIfSoldNowSTCG
-  const afterTaxIfHeld = (price: number) => {
-    const value = price * shares
-    return value - taxOnGain(value - totalCostBasis, true, settings).total
-  }
+  const heldNet = (price: number) => afterTaxIfHeld(price, shares, totalCostBasis, settings)
 
   // --- Break-even: price at the LTCG date where waiting nets the same as selling now.
   // afterTaxIfHeld is increasing in price (marginal rate < 100%), so bisect.
   let breakevenPrice = currentPrice
   let dropCushionPercent = 0
-  const canWait = !isLoss && !isLongTerm && !stcgPreferred && shares > 0
+  const canWait = !isLoss && !isLongTerm && !stcgPreferred
   if (canWait) {
     let lo = 0, hi = currentPrice
     for (let i = 0; i < 60; i++) {
       const mid = (lo + hi) / 2
-      if (afterTaxIfHeld(mid) < netProceedsNow) lo = mid
+      if (heldNet(mid) < netProceedsNow) lo = mid
       else hi = mid
     }
     breakevenPrice = hi
@@ -198,7 +238,7 @@ export function analyzePosition(position: Position, settings: UserSettings, toda
     probBelowBreakeven = probBelow(currentPrice, breakevenPrice, sigma)
     for (const { z, w } of Z_GRID) {
       const price = currentPrice * Math.exp(-0.5 * sigma * sigma + sigma * z)
-      const diff = afterTaxIfHeld(price) - netProceedsNow
+      const diff = heldNet(price) - netProceedsNow
       expectedGainFromWaiting += w * diff
       if (diff < 0) expectedShortfall += w * -diff
     }
@@ -255,15 +295,22 @@ export function formatCurrency(n: number, decimals = 0): string {
   }).format(n)
 }
 
+/** Signed percent; a value that rounds to zero prints as +0.0%, never -0.0%. */
 export function formatPercent(n: number, decimals = 1): string {
-  return `${n >= 0 ? '+' : ''}${n.toFixed(decimals)}%`
+  if (Number.isNaN(n)) return '—'
+  if (!Number.isFinite(n)) return n > 0 ? '+∞%' : '−∞%'
+  const fixed = n.toFixed(decimals)
+  const isZero = Number(fixed) === 0
+  return `${n >= 0 || isZero ? '+' : '-'}${isZero ? (0).toFixed(decimals) : Math.abs(n).toFixed(decimals)}%`
 }
 
 export function formatRate(r: number): string {
+  if (!Number.isFinite(r)) return '—'
   return `${(r * 100).toFixed(1)}%`
 }
 
 export function formatProb(p: number): string {
+  if (!Number.isFinite(p)) return '—'
   if (p < 0.01) return '<1%'
   if (p > 0.99) return '>99%'
   return `${Math.round(p * 100)}%`
