@@ -6,7 +6,9 @@ import {
 import { useAppStore } from '../../store/useAppStore'
 import { useViewData } from '../../store/useViewData'
 import { formatCurrency } from '../../lib/taxEngine'
-import type { FutureVestLot } from '../../types'
+import {
+  VEST_RETENTION, buildPriceMap, estimateGrossValue, groupByMonth, upcomingVests,
+} from '../../lib/vesting'
 
 // Ticker → color for bar chart
 const TICKER_COLORS: Record<string, string> = {
@@ -20,31 +22,6 @@ const TICKER_COLORS: Record<string, string> = {
 }
 function tickerColor(ticker: string) {
   return TICKER_COLORS[ticker] ?? '#818cf8'
-}
-
-function groupByMonth(vests: FutureVestLot[]): Array<{
-  monthKey: string   // YYYY-MM
-  monthLabel: string // "June 2026"
-  lots: FutureVestLot[]
-  sharesGross: number
-  awardIds: string[]
-}> {
-  const map = new Map<string, FutureVestLot[]>()
-  for (const vest of vests) {
-    const key = vest.vestDate.slice(0, 7) // YYYY-MM
-    const arr = map.get(key) ?? []
-    arr.push(vest)
-    map.set(key, arr)
-  }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, lots]) => ({
-      monthKey: key,
-      monthLabel: format(parseISO(`${key}-01`), 'MMMM yyyy'),
-      lots,
-      sharesGross: lots.reduce((s, l) => s + l.sharesGross, 0),
-      awardIds: [...new Set(lots.map(l => l.awardId).filter(Boolean))],
-    }))
 }
 
 interface TooltipProps {
@@ -80,16 +57,11 @@ function VestTooltip({ active, payload, priceMap }: TooltipProps) {
 
 export default function FutureVestingView() {
   const clearFutureVests = useAppStore(s => s.clearFutureVests)
-  const { futureVests, positions, isDemo } = useViewData()
-
-  // Build a price map from current positions
-  const priceMap = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const p of positions) {
-      if (!(p.ticker in map)) map[p.ticker] = p.currentPrice
-    }
-    return map
-  }, [positions])
+  const { futureVests: allVests, positions, isDemo } = useViewData()
+  const today = format(new Date(), 'yyyy-MM-dd')
+  // Vest dates that have passed are already holdings (or a stale import)
+  const futureVests = useMemo(() => upcomingVests(allVests, today), [allVests, today])
+  const priceMap = useMemo(() => buildPriceMap(positions), [positions])
 
   const months = useMemo(() => groupByMonth(futureVests), [futureVests])
 
@@ -97,17 +69,7 @@ export default function FutureVestingView() {
   const totalShares = futureVests.reduce((s, v) => s + v.sharesGross, 0)
   const uniqueTickers = useMemo(() => [...new Set(futureVests.map(v => v.ticker))], [futureVests])
 
-  // Estimated value: group by ticker, multiply by known price
-  const estimatedGrossValue = useMemo(() => {
-    let total = 0
-    for (const ticker of uniqueTickers) {
-      const price = priceMap[ticker]
-      if (price == null) continue
-      const shares = futureVests.filter(v => v.ticker === ticker).reduce((s, v) => s + v.sharesGross, 0)
-      total += shares * price
-    }
-    return total
-  }, [futureVests, priceMap, uniqueTickers])
+  const estimatedGrossValue = useMemo(() => estimateGrossValue(futureVests, priceMap), [futureVests, priceMap])
 
   if (futureVests.length === 0) {
     return (
@@ -125,14 +87,13 @@ export default function FutureVestingView() {
   const hasAnyPrice = uniqueTickers.some(t => priceMap[t] != null)
 
   // Next vest
-  const sortedVests = [...futureVests].sort((a, b) => a.vestDate.localeCompare(b.vestDate))
-  const nextVest = sortedVests[0]
+  const nextVest = futureVests[0]
   const daysUntilNext = nextVest
     ? differenceInCalendarDays(parseISO(nextVest.vestDate), new Date())
     : null
 
   // Net shares estimate (54% retained ≈ 46% withheld)
-  const RETENTION = 0.54
+  const RETENTION = VEST_RETENTION
   const estimatedNetShares = Math.round(totalShares * RETENTION)
 
   // Bar chart data

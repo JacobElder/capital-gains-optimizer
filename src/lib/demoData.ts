@@ -148,6 +148,7 @@ export function anonymizePortfolio(
   real: ViewData, seed: number, maskTickers: boolean, today: Date = new Date(),
 ): ViewData {
   const rng = new Rng(seed)
+  const stamp = today.toISOString() // real data-entry timestamps are not shown
   const sizeScale = rng.logUniform(0.35, 2.5)               // one factor for all share counts
   const tickerMap = maskTickers ? buildTickerMap(real.positions, real.futureVests, rng) : null
 
@@ -163,16 +164,21 @@ export function anonymizePortfolio(
     // Small basis noise so the gain % is not an exact match of the real one
     const basisNoise = Math.exp(0.04 * rng.normal())
     const shares = roundShares(p.shares * sizeScale * rng.uniform(0.85, 1.15), Number.isInteger(p.shares))
+    // Keep the lot's risk profile, but not the exact volatility the user typed
+    const baseVol = mapped ? (p.volatilityOverride ?? effectiveVol(p).vol) : p.volatilityOverride
+    const volatilityOverride = baseVol != null ? Math.max(1, Math.round(baseVol * rng.uniform(0.9, 1.1))) : undefined
     return {
       ...p,
       id: `demo-${i}`,
+      createdAt: stamp,
+      updatedAt: stamp,
       ticker: mapped?.ticker ?? p.ticker,
       name: mapped?.name ?? p.name,
       shares,
       costBasisPerShare: round2(p.costBasisPerShare * f * basisNoise),
       currentPrice: round2(p.currentPrice * f),
       purchaseDate: jitterPurchaseDate(p.purchaseDate, today, rng),
-      volatilityOverride: mapped ? (p.volatilityOverride ?? effectiveVol(p).vol) : p.volatilityOverride,
+      volatilityOverride,
     }
   })
 
@@ -224,11 +230,12 @@ export function generateSamplePortfolio(
   seed: number, baseSettings: UserSettings, today: Date = new Date(), realPositions: Position[] = [],
 ): ViewData {
   const rng = new Rng(seed)
-  const nowIso = new Date().toISOString()
+  const nowIso = today.toISOString()
   const vol = effectiveVol({ ticker: SAMPLE_TICKER }).vol / 100
 
   const realPrice = realPositions.find(p => p.ticker === 'GOOG' || p.ticker === 'GOOGL')?.currentPrice
-  const currentPrice = round2(realPrice ?? FALLBACK_PRICE)
+  // A tiny, zero or missing price would size the grant at millions of shares
+  const currentPrice = round2(realPrice != null && Number.isFinite(realPrice) && realPrice >= 1 ? realPrice : FALLBACK_PRICE)
 
   // Grant sized so year one vests roughly $60K–$200K at today's price
   const grantShares = Math.round(rng.logUniform(60_000, 200_000) / FRONT_LOADED_SCHEDULE[0] / currentPrice)
@@ -260,7 +267,11 @@ export function generateSamplePortfolio(
   const firstVestMonthsAgo = lastVestOffset + monthsElapsed - 1
   for (let n = 1; n <= monthsElapsed; n++) {
     const monthsAgo = firstVestMonthsAgo - (n - 1)
-    const fmv = pricesBack[Math.min(pricesBack.length - 1, monthsAgo)]
+    // A vest earlier this month (on or after the 25th) priced at exactly today's
+    // price would show a $0 gain; put it between last month's price and the cap.
+    const fmv = monthsAgo === 0
+      ? Math.sqrt(pricesBack[1] * MAX_PAST_PRICE_RATIO * currentPrice)
+      : pricesBack[Math.min(pricesBack.length - 1, monthsAgo)]
     positions.push({
       id: `sample-${n}`,
       ticker: SAMPLE_TICKER,

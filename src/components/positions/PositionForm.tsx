@@ -5,21 +5,17 @@ import { formatCurrency } from '../../lib/taxEngine'
 import { lookupTickerName } from '../../data/tickerNames'
 import { getTickerVol, isVolKnown, DEFAULT_VOL } from '../../data/tickerVolatility'
 import type { Position } from '../../types'
+import {
+  effectivePerShare, formToPosition, validatePositionForm,
+  type FormErrors, type PositionFormFields, type PositionFormInput,
+} from '../../lib/positionForm'
 
 interface Props {
   editingPosition?: Position
   onClose: () => void
 }
 
-interface FormState {
-  ticker: string
-  name: string
-  shares: string
-  costBasisPerShare: string
-  purchaseDate: string
-  currentPrice: string
-  volatilityOverride: string  // empty = use ticker lookup
-}
+type FormState = PositionFormFields
 
 
 function emptyForm(): FormState {
@@ -38,13 +34,6 @@ function positionToForm(p: Position): FormState {
   }
 }
 
-function divideByShares(totalStr: string, sharesStr: string): string {
-  const total = parseFloat(totalStr)
-  const shares = parseFloat(sharesStr)
-  if (isNaN(total) || isNaN(shares) || shares <= 0) return ''
-  return (total / shares).toFixed(4)
-}
-
 export default function PositionForm({ editingPosition, onClose }: Props) {
   // Local calendar date (toISOString would give tomorrow's UTC date in US evenings)
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -52,7 +41,7 @@ export default function PositionForm({ editingPosition, onClose }: Props) {
   const [form, setForm] = useState<FormState>(
     editingPosition ? positionToForm(editingPosition) : emptyForm()
   )
-  const [errors, setErrors] = useState<Partial<FormState>>({})
+  const [errors, setErrors] = useState<FormErrors>({})
 
   // Toggle: enter total market value vs per-share price
   const [priceMode, setPriceMode] = useState<'per-share' | 'total'>('per-share')
@@ -72,12 +61,8 @@ export default function PositionForm({ editingPosition, onClose }: Props) {
 
   // Compute derived per-share values from total inputs
   const shares = parseFloat(form.shares)
-  const effectivePricePerShare = priceMode === 'per-share'
-    ? parseFloat(form.currentPrice)
-    : parseFloat(divideByShares(totalPriceInput, form.shares))
-  const effectiveBasisPerShare = basisMode === 'per-share'
-    ? parseFloat(form.costBasisPerShare)
-    : parseFloat(divideByShares(totalBasisInput, form.shares))
+  const formInput: PositionFormInput = { form, priceMode, basisMode, totalPriceInput, totalBasisInput, today }
+  const { price: effectivePricePerShare, basis: effectiveBasisPerShare } = effectivePerShare(formInput)
 
   const hasPreview = !isNaN(shares) && shares > 0 && !isNaN(effectivePricePerShare) && !isNaN(effectiveBasisPerShare)
   const totalCostBasis = hasPreview ? effectiveBasisPerShare * shares : null
@@ -119,44 +104,12 @@ export default function PositionForm({ editingPosition, onClose }: Props) {
     setBasisMode(mode)
   }
 
-  function validate(): boolean {
-    const errs: Partial<FormState> = {}
-    if (!form.ticker.trim()) errs.ticker = 'Required'
-    if (!form.name.trim()) errs.name = 'Required'
-    if (!form.shares || isNaN(parseFloat(form.shares)) || parseFloat(form.shares) <= 0)
-      errs.shares = 'Must be > 0'
-
-    // Validate effective per-share basis
-    if (isNaN(effectiveBasisPerShare) || effectiveBasisPerShare < 0) {
-      if (basisMode === 'total') errs.costBasisPerShare = 'Enter total acquisition cost'
-      else errs.costBasisPerShare = 'Must be ≥ 0'
-    }
-
-    // Validate effective per-share price
-    if (isNaN(effectivePricePerShare) || effectivePricePerShare <= 0) {
-      if (priceMode === 'total') errs.currentPrice = 'Enter total market value'
-      else errs.currentPrice = 'Must be > 0'
-    }
-
-    if (!form.purchaseDate) errs.purchaseDate = 'Required'
-    if (form.purchaseDate > today) errs.purchaseDate = 'Cannot be in the future'
-    setErrors(errs)
-    return Object.keys(errs).length === 0
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!validate()) return
-    const volOverride = parseFloat(form.volatilityOverride)
-    const data = {
-      ticker: form.ticker.trim().toUpperCase(),
-      name: form.name.trim(),
-      shares: parseFloat(form.shares),
-      costBasisPerShare: effectiveBasisPerShare,
-      purchaseDate: form.purchaseDate,
-      currentPrice: effectivePricePerShare,
-      volatilityOverride: !isNaN(volOverride) && volOverride > 0 ? volOverride : undefined,
-    }
+    const errs = validatePositionForm(formInput)
+    setErrors(errs)
+    if (Object.keys(errs).length > 0) return
+    const data = formToPosition(formInput)
     if (editingPosition) {
       updatePosition(editingPosition.id, data)
     } else {
@@ -375,6 +328,7 @@ export default function PositionForm({ editingPosition, onClose }: Props) {
             return (
               <Field
                 label="Volatility Assumption"
+                error={errors.volatilityOverride}
                 hint={
                   hasOverride
                     ? `Custom override · clears to use ticker data`
@@ -395,7 +349,7 @@ export default function PositionForm({ editingPosition, onClose }: Props) {
                       min="1"
                       max="200"
                       step="1"
-                      className={inputCls(false) + ' font-mono pr-8'}
+                      className={inputCls(!!errors.volatilityOverride) + ' font-mono pr-8'}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">%</span>
                   </div>

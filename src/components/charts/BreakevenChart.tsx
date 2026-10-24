@@ -5,7 +5,7 @@ import {
   Line, Legend, Area, ComposedChart,
 } from 'recharts'
 import type { PositionAnalysis } from '../../types'
-import { formatCurrency, taxOnGain } from '../../lib/taxEngine'
+import { afterTaxIfHeld, formatCurrency } from '../../lib/taxEngine'
 import { useViewData } from '../../store/useViewData'
 
 interface Props {
@@ -19,10 +19,7 @@ const BREAKEVEN = '#d97706'
 function useAfterTaxIfHeld(analysis: PositionAnalysis) {
   const { settings } = useViewData()
   const { position: { shares }, totalCostBasis } = analysis
-  return (price: number) => {
-    const value = price * shares
-    return value - taxOnGain(value - totalCostBasis, true, settings).total
-  }
+  return (price: number) => afterTaxIfHeld(price, shares, totalCostBasis, settings)
 }
 
 const kFormat = (v: number) => (Math.abs(v) >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v.toFixed(0)}`)

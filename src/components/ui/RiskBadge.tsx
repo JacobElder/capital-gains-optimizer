@@ -37,6 +37,11 @@ const CONFIG: Record<RiskLevel, { label: string; icon: string; classes: string }
     icon: '!',
     classes: 'bg-orange-50 border border-orange-200 text-orange-700',
   },
+  invalid: {
+    label: 'CHECK DATA',
+    icon: '?',
+    classes: 'bg-slate-50 border border-slate-300 text-slate-500',
+  },
 }
 
 export default function RiskBadge({ riskLevel, dropCushionPercent, large }: Props) {
@@ -47,7 +52,7 @@ export default function RiskBadge({ riskLevel, dropCushionPercent, large }: Prop
       <span className="text-[10px] font-black">{cfg.icon}</span>
       {cfg.label}
       {dropCushionPercent !== undefined && riskLevel !== 'high' && riskLevel !== 'already-ltcg'
-        && riskLevel !== 'loss' && riskLevel !== 'stcg-preferred'
+        && riskLevel !== 'loss' && riskLevel !== 'stcg-preferred' && riskLevel !== 'invalid'
         && (
         <span className="opacity-60 font-normal">
           ({dropCushionPercent.toFixed(1)}% cushion)

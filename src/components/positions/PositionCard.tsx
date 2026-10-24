@@ -231,7 +231,7 @@ export default function PositionCard({ position, onEdit, readOnly }: Props) {
         <Stat label="Current Value" value={formatCurrency(currentValue)} mono />
         <Stat
           label="Total Gain / Loss"
-          value={`${formatCurrency(gainAmount)} (${Math.abs(gainPercent).toFixed(1)}%)`}
+          value={`${formatCurrency(gainAmount)} (${Number.isFinite(gainPercent) ? `${Math.abs(gainPercent).toFixed(1)}%` : 'zero basis'})`}
           mono
           positive={!isLoss}
           negative={isLoss}
@@ -252,8 +252,8 @@ export default function PositionCard({ position, onEdit, readOnly }: Props) {
         />
       </div>
 
-      {/* Tax comparison */}
-      {!isLoss && (
+      {/* Tax comparison: only meaningful while the lot is still short-term */}
+      {!isLoss && !isLongTerm && riskLevel !== 'invalid' && (
         <>
           <div className="border-t border-slate-100 mx-5" />
           <div className="px-5 py-4">
@@ -274,12 +274,12 @@ export default function PositionCard({ position, onEdit, readOnly }: Props) {
                 <div className="text-xs text-slate-400 mt-0.5">{formatRate(ltcgCombinedRate)} effective</div>
               </div>
               <div className={`rounded-md p-3 text-center border ${
-                taxSavingsFromWaiting > 0
+                taxSavingsFromWaiting > 0.5
                   ? 'bg-green-50 border-green-200'
-                  : 'bg-red-50 border-red-200'
+                  : taxSavingsFromWaiting < -0.5 ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'
               }`}>
                 <div className="text-xs text-slate-500 mb-1">Tax Savings</div>
-                <div className={`font-mono font-bold text-sm ${taxSavingsFromWaiting > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                <div className={`font-mono font-bold text-sm ${taxSavingsFromWaiting > 0.5 ? 'text-green-700' : taxSavingsFromWaiting < -0.5 ? 'text-red-600' : 'text-slate-600'}`}>
                   {taxSavingsFromWaiting >= 0 ? '+' : ''}{formatCurrency(taxSavingsFromWaiting)}
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">by waiting, if price holds</div>

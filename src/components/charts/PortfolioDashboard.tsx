@@ -3,23 +3,33 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
-import type { PositionAnalysis } from '../../types'
+import type { PositionAnalysis, RiskLevel } from '../../types'
 import { formatCurrency } from '../../lib/taxEngine'
+import { RISK_LEVELS, chanceWaitingWins, summarizePortfolio } from '../../lib/portfolioSummary'
 
-const RISK_COLOR: Record<string, string> = {
+const RISK_COLOR: Record<RiskLevel, string> = {
   high: '#ef4444',
   moderate: '#f59e0b',
   low: '#22c55e',
   loss: '#94a3b8',
   'already-ltcg': '#3b82f6',
   'stcg-preferred': '#f97316',
+  invalid: '#64748b',
 }
 
-// P(price stays above break-even through the LTCG date), using each lot's own volatility
-function positionProbability(a: PositionAnalysis): number | null {
-  if (a.isLoss || a.isLongTerm || a.stcgPreferred) return null
-  return 1 - a.probBelowBreakeven
+const RISK_CHIP: Record<RiskLevel, { label: string; chip: string; bar: string }> = {
+  high: { label: 'High Risk', chip: 'bg-red-50 border-red-200 text-red-700', bar: 'bg-red-400' },
+  'stcg-preferred': { label: 'Sell Short-Term', chip: 'bg-orange-50 border-orange-200 text-orange-700', bar: 'bg-orange-400' },
+  moderate: { label: 'Moderate', chip: 'bg-amber-50 border-amber-200 text-amber-700', bar: 'bg-amber-400' },
+  low: { label: 'Low Risk', chip: 'bg-green-50 border-green-200 text-green-700', bar: 'bg-green-500' },
+  'already-ltcg': { label: 'LTCG ✓', chip: 'bg-blue-50 border-blue-200 text-blue-700', bar: 'bg-blue-400' },
+  loss: { label: 'Loss', chip: 'bg-slate-100 border-slate-300 text-slate-600', bar: 'bg-slate-300' },
+  invalid: { label: 'Check Data', chip: 'bg-slate-50 border-slate-300 text-slate-500', bar: 'bg-slate-500' },
 }
+
+const SCATTER_LEGEND: Array<[RiskLevel, string]> = [
+  ['high', 'High'], ['moderate', 'Moderate'], ['low', 'Low'], ['stcg-preferred', 'Sell ST'], ['loss', 'Loss'],
+]
 
 function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: ScatterPoint }> }) {
   if (!active || !payload?.length) return null
@@ -66,7 +76,7 @@ interface ScatterPoint {
   y: number
   z: number
   ticker: string
-  risk: string
+  risk: RiskLevel
   value: number
   gain: number
   savings: number
@@ -79,32 +89,14 @@ interface Props {
 }
 
 export default function PortfolioDashboard({ analyses }: Props) {
-  const {
-    totalValue, totalGain, totalSavings,
-    byRisk, weightedProbability, expectedShortfall, scatterData, longTermCount,
-    totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting,
-  } = useMemo(() => {
-    const totalValue = analyses.reduce((s, a) => s + a.currentValue, 0)
-    const totalGain = analyses.reduce((s, a) => s + a.gainAmount, 0)
-    const actionable = analyses.filter(a => !a.isLoss && !a.isLongTerm && !a.stcgPreferred)
-    const totalSavings = actionable.reduce((s, a) => s + a.taxSavingsFromWaiting, 0)
+  const summary = useMemo(() => summarizePortfolio(analyses), [analyses])
+  const { totalValue, totalGain, totalSavings, weightedProbability, expectedShortfall, riskCounts, longTermCount } = summary
+  const { totalLosses, offset, netGainAfterHarvesting, taxSaved: taxSavedByHarvesting } = summary.harvesting
 
-    const byRisk = {
-      high: analyses.filter(a => a.riskLevel === 'high'),
-      moderate: analyses.filter(a => a.riskLevel === 'moderate'),
-      low: analyses.filter(a => a.riskLevel === 'low'),
-      loss: analyses.filter(a => a.isLoss),
-      ltcg: analyses.filter(a => a.isLongTerm),
-    }
-
-    // Savings-weighted average of each lot's chance of ending above break-even
-    const weightedNum = actionable.reduce((s, a) => s + (positionProbability(a) ?? 1) * a.taxSavingsFromWaiting, 0)
-    const weightedProbability = totalSavings > 0 ? weightedNum / totalSavings : null
-    const expectedShortfall = actionable.reduce((s, a) => s + a.expectedShortfall, 0)
-
-    // Long-term lots have no decision left (and would all pile up at day 0)
-    const longTermCount = analyses.filter(a => a.isLongTerm).length
-    const scatterData: ScatterPoint[] = analyses.filter(a => !a.isLongTerm).map(a => ({
+  // Long-term and invalid lots have no decision left (and would all pile up at day 0)
+  const scatterData: ScatterPoint[] = useMemo(() => analyses
+    .filter(a => !a.isLongTerm && a.riskLevel !== 'invalid')
+    .map(a => ({
       x: a.daysUntilLongTerm,
       y: Math.max(0, a.taxSavingsFromWaiting),
       z: Math.max(a.currentValue, 500),
@@ -114,26 +106,8 @@ export default function PortfolioDashboard({ analyses }: Props) {
       gain: a.gainAmount,
       savings: a.taxSavingsFromWaiting,
       daysUntil: a.daysUntilLongTerm,
-      prob: positionProbability(a),
-    }))
-
-    const losingPositions = analyses.filter(a => a.isLoss)
-    const totalLosses = losingPositions.reduce((s, a) => s + Math.abs(a.gainAmount), 0)
-    const totalGainsOnly = analyses.filter(a => a.gainAmount > 0).reduce((s, a) => s + a.gainAmount, 0)
-    const netGainAfterHarvesting = Math.max(0, totalGainsOnly - totalLosses)
-    // A harvested loss saves tax at the rate of whatever gain it offsets: the
-    // short-term rate if it offsets short-term gains, the long-term rate otherwise.
-    // Rates come from the gaining lots (losing lots have no gain, so no rate).
-    const gainers = analyses.filter(a => a.gainAmount > 0)
-    const maxRate = (pick: (a: PositionAnalysis) => number) => gainers.reduce((m, a) => Math.max(m, pick(a)), 0)
-    const offset = Math.min(totalLosses, totalGainsOnly)
-    const taxSavedByHarvesting = {
-      low: offset * maxRate(a => a.ltcgCombinedRate),
-      high: offset * maxRate(a => a.stcgCombinedRate),
-    }
-
-    return { totalValue, totalGain, totalSavings, byRisk, weightedProbability, expectedShortfall, scatterData, longTermCount, totalLosses, totalGainsOnly, netGainAfterHarvesting, taxSavedByHarvesting }
-  }, [analyses])
+      prob: chanceWaitingWins(a),
+    })), [analyses])
 
   const n = analyses.length
 
@@ -175,30 +149,18 @@ export default function PortfolioDashboard({ analyses }: Props) {
       <div>
         <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Risk Distribution — {n} lot{n !== 1 ? 's' : ''}</div>
         <div className="flex gap-2 flex-wrap mb-2">
-          {[
-            { key: 'high', label: 'High Risk', count: byRisk.high.length, color: 'bg-red-50 border-red-200 text-red-700' },
-            { key: 'moderate', label: 'Moderate', count: byRisk.moderate.length, color: 'bg-amber-50 border-amber-200 text-amber-700' },
-            { key: 'low', label: 'Low Risk', count: byRisk.low.length, color: 'bg-green-50 border-green-200 text-green-700' },
-            { key: 'loss', label: 'Loss', count: byRisk.loss.length, color: 'bg-slate-100 border-slate-300 text-slate-600' },
-            { key: 'ltcg', label: 'LTCG ✓', count: byRisk.ltcg.length, color: 'bg-blue-50 border-blue-200 text-blue-700' },
-          ].filter(r => r.count > 0).map(r => (
-            <span key={r.key} className={`text-xs border rounded px-2.5 py-1 font-medium ${r.color}`}>
-              {r.label} · {r.count} ({Math.round((r.count / n) * 100)}%)
+          {RISK_LEVELS.filter(r => riskCounts[r] > 0).map(r => (
+            <span key={r} className={`text-xs border rounded px-2.5 py-1 font-medium ${RISK_CHIP[r].chip}`}>
+              {RISK_CHIP[r].label} · {riskCounts[r]} ({Math.round((riskCounts[r] / n) * 100)}%)
             </span>
           ))}
         </div>
         <div className="flex rounded overflow-hidden h-2 gap-px bg-slate-100">
-          {[
-            { count: byRisk.high.length, color: 'bg-red-400' },
-            { count: byRisk.moderate.length, color: 'bg-amber-400' },
-            { count: byRisk.low.length, color: 'bg-green-500' },
-            { count: byRisk.loss.length, color: 'bg-slate-300' },
-            { count: byRisk.ltcg.length, color: 'bg-blue-400' },
-          ].filter(s => s.count > 0).map((s, i) => (
+          {RISK_LEVELS.filter(r => riskCounts[r] > 0).map(r => (
             <div
-              key={i}
-              className={`${s.color} transition-all`}
-              style={{ width: `${(s.count / n) * 100}%` }}
+              key={r}
+              className={`${RISK_CHIP[r].bar} transition-all`}
+              style={{ width: `${(riskCounts[r] / n) * 100}%` }}
             />
           ))}
         </div>
@@ -215,9 +177,9 @@ export default function PortfolioDashboard({ analyses }: Props) {
             </div>
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400 justify-end">
-            {[['#ef4444', 'High'], ['#f59e0b', 'Moderate'], ['#22c55e', 'Low'], ['#94a3b8', 'Loss']].map(([c, l]) => (
+            {SCATTER_LEGEND.map(([r, l]) => (
               <span key={l} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: c }} />
+                <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: RISK_COLOR[r] }} />
                 {l}
               </span>
             ))}
@@ -257,7 +219,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
               label={{ value: '180d', fill: '#94a3b8', fontSize: 8, position: 'top' }} />
             <Scatter data={scatterData} fillOpacity={0.8}>
               {scatterData.map((d, i) => (
-                <Cell key={i} fill={RISK_COLOR[d.risk] ?? '#94a3b8'} />
+                <Cell key={i} fill={RISK_COLOR[d.risk]} />
               ))}
             </Scatter>
           </ScatterChart>
@@ -281,7 +243,7 @@ export default function PortfolioDashboard({ analyses }: Props) {
             <div>
               <div className="text-xs text-slate-400 mb-0.5">Offsets Against Gains</div>
               <div className="font-mono font-bold text-lg text-slate-900">
-                {formatCurrency(Math.min(totalLosses, totalGainsOnly))}
+                {formatCurrency(offset)}
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
                 {netGainAfterHarvesting > 0

@@ -18,7 +18,7 @@ export default function HoldingProgressBar({ daysHeld, daysUntilLongTerm, isLong
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs text-slate-400">
-        <span>{daysHeld} days held</span>
+        <span>{Math.max(0, daysHeld)} day{Math.max(0, daysHeld) !== 1 ? 's' : ''} held</span>
         {isLongTerm
           ? <span className="text-green-700 font-semibold">✓ Long-term since {longTermDate}</span>
           : <span>{daysUntilLongTerm} day{daysUntilLongTerm !== 1 ? 's' : ''} until LTCG · sell on or after {longTermDate}</span>

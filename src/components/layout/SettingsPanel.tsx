@@ -27,10 +27,13 @@ export default function SettingsPanel() {
   const currentState = STATE_TAX_DATA[settings.stateCode]
 
   function handleIncomeBlur() {
-    const parsed = parseInt(incomeStr.replace(/[^0-9]/g, ''), 10)
-    if (!isNaN(parsed) && parsed >= 0) {
+    // Keep the decimal point: stripping it turned "150,000.50" into 15,000,050
+    const parsed = Math.round(parseFloat(incomeStr.replace(/[$,\s]/g, '')))
+    if (Number.isFinite(parsed) && parsed >= 0) {
       setSettings({ annualTaxableIncome: parsed })
       setIncomeStr(parsed.toLocaleString())
+    } else {
+      setIncomeStr(settings.annualTaxableIncome.toLocaleString()) // revert bad input
     }
   }
 

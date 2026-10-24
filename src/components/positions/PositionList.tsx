@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import { useViewData } from '../../store/useViewData'
 import { analyzePosition } from '../../lib/taxEngine'
+import { groupByTicker, sortAnalyses, type SortKey } from '../../lib/portfolioSummary'
 import PositionCard from './PositionCard'
 import GroupedPositionCard from './GroupedPositionCard'
 import PositionForm from './PositionForm'
@@ -9,7 +10,6 @@ import SchwabImportModal from './SchwabImportModal'
 import EmptyState from '../ui/EmptyState'
 import PortfolioDashboard from '../charts/PortfolioDashboard'
 
-type SortKey = 'urgency' | 'savings' | 'gain' | 'risk'
 type ViewMode = 'individual' | 'grouped'
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -19,9 +19,6 @@ const SORT_LABELS: Record<SortKey, string> = {
   gain: 'Gain Amount',
 }
 
-const RISK_ORDER: Record<string, number> = {
-  high: 0, 'stcg-preferred': 1, moderate: 2, low: 3, 'already-ltcg': 4, loss: 5,
-}
 
 export default function PositionList() {
   const { editingPositionId, isAddingPosition, setEditingPositionId, setIsAddingPosition, clearPositions } = useAppStore()
@@ -45,33 +42,8 @@ export default function PositionList() {
   const [viewMode, setViewMode] = useState<ViewMode | null>(null)
   const effectiveViewMode: ViewMode = viewMode ?? (hasGroupableTickers ? 'grouped' : 'individual')
 
-  const sorted = useMemo(() => {
-    return [...analyses].sort((a, b) => {
-      switch (sortKey) {
-        case 'urgency':
-          if (a.isLongTerm && b.isLongTerm) return 0
-          if (a.isLongTerm) return 1
-          if (b.isLongTerm) return -1
-          return a.daysUntilLongTerm - b.daysUntilLongTerm
-        case 'risk':
-          return RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel]
-        case 'savings':
-          return b.taxSavingsFromWaiting - a.taxSavingsFromWaiting
-        case 'gain':
-          return b.gainAmount - a.gainAmount
-      }
-    })
-  }, [analyses, sortKey])
-
-  const groupedByTicker = useMemo(() => {
-    const map = new Map<string, typeof sorted>()
-    for (const a of sorted) {
-      const existing = map.get(a.position.ticker) ?? []
-      existing.push(a)
-      map.set(a.position.ticker, existing)
-    }
-    return map
-  }, [sorted])
+  const sorted = useMemo(() => sortAnalyses(analyses, sortKey), [analyses, sortKey])
+  const groupedByTicker = useMemo(() => groupByTicker(sorted), [sorted])
 
   if (positions.length === 0 && isDemo) {
     return (
